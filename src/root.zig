@@ -144,7 +144,7 @@ pub const Client = struct {
         defer bsonBuf.deinit();
         var bsonWriter = bson.writer(self.allocator, bsonBuf.writer());
         defer bsonWriter.deinit();
-        // hello command 
+        // hello command
         try bsonWriter.write(RawBson.document(&.{
             .{ "hello", RawBson.int32(1) },
             .{ "$db", RawBson.string("test") },
@@ -170,18 +170,18 @@ pub const Client = struct {
         //std.debug.print(".msg len {d}\n", .{msgLen});
         //std.debug.print("response bytes {any}\n", .{responseBuf});
         var fbs = std.io.fixedBufferStream(responseBuf);
-        var responseReader = fbs.reader();
+        var responseReader = std.io.countingReader(fbs.reader());
         // header
-        std.debug.print("request id {d}\n", .{try responseReader.readInt(i32, .little)});
-        std.debug.print("response to {d}\n", .{try responseReader.readInt(i32, .little)});
+        std.debug.print("request id {d}\n", .{try responseReader.reader().readInt(i32, .little)});
+        std.debug.print("response to {d}\n", .{try responseReader.reader().readInt(i32, .little)});
         // op code
-        switch (OpCode.fromInt(try responseReader.readInt(i32, .little))) {
+        switch (OpCode.fromInt(try responseReader.reader().readInt(i32, .little))) {
             .reply => {
-                std.debug.print("response flags  {d}\n", .{try responseReader.readInt(i32, .little)});
-                std.debug.print("cursor id {d}\n", .{try responseReader.readInt(i64, .little)});
-                std.debug.print("starting from {d}\n", .{try responseReader.readInt(i32, .little)});
-                std.debug.print("number returned {d}\n", .{try responseReader.readInt(i32, .little)});
-                var bsonReader = bson.reader(self.allocator, responseReader);
+                std.debug.print("response flags  {d}\n", .{try responseReader.reader().readInt(i32, .little)});
+                std.debug.print("cursor id {d}\n", .{try responseReader.reader().readInt(i64, .little)});
+                std.debug.print("starting from {d}\n", .{try responseReader.reader().readInt(i32, .little)});
+                std.debug.print("number returned {d}\n", .{try responseReader.reader().readInt(i32, .little)});
+                var bsonReader = bson.reader(self.allocator, responseReader.reader());
                 defer bsonReader.deinit();
                 const docs = try bsonReader.read();
                 //std.debug.print("documents {any}\n", .{docs});
@@ -200,28 +200,31 @@ pub const Client = struct {
                 }
             },
             .msg => {
-                std.debug.print("response flags  {d}\n", .{try responseReader.readInt(u32, .little)});
-                switch (SectionKind.fromInt(try responseReader.readInt(u8, .little))) {
-                    .body => {
-                        var bsonReader = bson.reader(self.allocator, responseReader);
-                        defer bsonReader.deinit();
-                        const doc = try bsonReader.read();
-                        //std.debug.print("documents {any}\n", .{docs});
-                        // https://www.mongodb.com/docs/manual/reference/method/db.runCommand/#response
-                        switch (doc) {
-                            .document => |v| {
-                                for (v.elements) |elem| {
-                                    std.debug.print("\ndocument {s}", .{elem.@"0"});
-                                    switch (elem.@"1") {
-                                        .string => |s| std.debug.print(" {s}", .{s}),
-                                        else => |otherwise| std.debug.print(" {any}", .{otherwise}),
+                std.debug.print("response flags  {d}\n", .{try responseReader.reader().readInt(u32, .little)});
+                // read sections until there's nothing left to read
+                while (responseReader.bytes_read < responseBuf.len) {
+                    switch (SectionKind.fromInt(try responseReader.reader().readInt(u8, .little))) {
+                        .body => {
+                            var bsonReader = bson.reader(self.allocator, responseReader.reader());
+                            defer bsonReader.deinit();
+                            const doc = try bsonReader.read();
+                            //std.debug.print("documents {any}\n", .{docs});
+                            // https://www.mongodb.com/docs/manual/reference/method/db.runCommand/#response
+                            switch (doc) {
+                                .document => |v| {
+                                    for (v.elements) |elem| {
+                                        std.debug.print("\ndocument {s}", .{elem.@"0"});
+                                        switch (elem.@"1") {
+                                            .string => |s| std.debug.print(" {s}", .{s}),
+                                            else => |otherwise| std.debug.print(" {any}", .{otherwise}),
+                                        }
                                     }
-                                }
-                            },
-                            else => unreachable,
-                        }
-                    },
-                    else => |otherwise| std.debug.print("section {s} not yet supported", .{otherwise}),
+                                },
+                                else => unreachable,
+                            }
+                        },
+                        else => |otherwise| std.debug.print("section {s} not yet supported", .{otherwise}),
+                    }
                 }
             },
             else => |v| std.debug.print("op code {s} not yet supported", .{v}),
