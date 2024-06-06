@@ -4,6 +4,14 @@ const protocol = @import("protocol.zig");
 const bson = @import("bson");
 const RawBson = bson.types.RawBson;
 
+const OS_TYPE = RawBson.string(switch (@import("builtin").os.tag) {
+    .macos => "Darwin",
+    .windows => "Windows",
+    .linux => "Linux",
+    .freebsd => "BSD",
+    else => "Unix",
+});
+
 pub const Client = struct {
     allocator: std.mem.Allocator,
     options: ClientOptions,
@@ -12,8 +20,14 @@ pub const Client = struct {
         return .{ .allocator = allocator, .options = options };
     }
 
-    fn deinit(self: *@This()) void {
+    pub fn deinit(self: *@This()) void {
         self.options.deinit();
+    }
+
+    // caller owns calling stream.deinit()
+    fn connection(self: *@This()) !std.net.Stream {
+        // todo: impl connection pull
+        return try std.net.tcpConnectToAddress(self.options.addresses[0]);
     }
 
     /// https://www.mongodb.com/docs/manual/reference/command/hello
@@ -22,24 +36,10 @@ pub const Client = struct {
         if (self.options.database == null) {
             return error.DatabaseNotSelected;
         }
-        // will expand to connection pool later
-        const stream = try std.net.tcpConnectToAddress(self.options.addresses[0]);
+        const stream = try self.connection();
         defer stream.close();
 
         // write request
-
-        var buf = std.ArrayList(u8).init(self.allocator);
-        defer buf.deinit();
-
-        var payload = buf.writer();
-        // msg header
-        try payload.writeInt(i32, 1, .little); // request id
-        try payload.writeInt(i32, 0, .little); // response to
-        try payload.writeInt(i32, protocol.OpCode.msg.toInt(), .little); // op code
-
-        // op msg
-        try payload.writeInt(u32, 0, .little); // flags
-        try payload.writeInt(u8, protocol.SectionKind.body.toInt(), .little);
         var bsonBuf = std.ArrayList(u8).init(self.allocator);
         defer bsonBuf.deinit();
         var bsonWriter = bson.writer(self.allocator, bsonBuf.writer());
@@ -67,13 +67,9 @@ pub const Client = struct {
                                     RawBson.document(
                                         &.{
                                             // https://github.com/mongodb/specifications/blob/master/source/mongodb-handshake/handshake.rst#clientostype
-                                            .{ "type",  RawBson.string(switch(@import("builtin").os.tag) {
-                                                .macos => "Darwin",
-                                                .windows => "Windows",
-                                                .linux => "Linux",
-                                                .freebsd => "BSD",
-                                                else =>  "Unix",
-                                            }), },
+                                            .{
+                                                "type", OS_TYPE,
+                                            },
                                         },
                                     ),
                                 },
@@ -85,9 +81,22 @@ pub const Client = struct {
         );
         const bsonBytes = try bsonBuf.toOwnedSlice();
         defer self.allocator.free(bsonBytes);
-        try payload.writeAll(bsonBytes);
+        const requestBytes = try protocol.request(
+            self.allocator,
+            .{
+                .request_id = 1,
+                .response_to = 0,
+                .op_code = .msg,
+            },
+            0,
+            &.{
+                .{
+                    .kind = .body,
+                    .payload = bsonBytes,
+                },
+            },
+        );
 
-        const requestBytes = try buf.toOwnedSlice();
         defer self.allocator.free(requestBytes);
         // msg len (including len bytes)
         try stream.writer().writeInt(i32, @intCast(requestBytes.len + 4), .little);
@@ -101,8 +110,6 @@ pub const Client = struct {
         const responseBuf = try self.allocator.alloc(u8, @intCast(msgLen - 4));
         defer self.allocator.free(responseBuf);
         _ = try stream.reader().readAll(responseBuf);
-        //std.debug.print(".msg len {d}\n", .{msgLen});
-        //std.debug.print("response bytes {any}\n", .{responseBuf});
         var fbs = std.io.fixedBufferStream(responseBuf);
         var responseReader = std.io.countingReader(fbs.reader());
         // header
@@ -167,7 +174,7 @@ pub const Client = struct {
 };
 
 // https://www.mongodb.com/docs/manual/reference/command/hello/#syntax
-test "hello world" {
+test "hello" {
     var client = Client.init(
         std.testing.allocator,
         .{ .database = "test" },

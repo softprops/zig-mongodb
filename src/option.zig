@@ -1,15 +1,12 @@
 const std = @import("std");
 const mem = std.mem;
 
-const UsernamePassword = struct {
+const Credentials = struct {
     user: []const u8,
     pass: []const u8,
-};
-// todo: add custom format fn so we don't log pass by accident
-
-const Credentials = union {
-    username_password: UsernamePassword,
-    // todo: add others
+    source: ?[]const u8 = null,
+    mechansim: ?[]const u8 = null,
+    mechanism_properties: ?std.StringHashMap([]const u8) = null,
 };
 
 // https://www.mongodb.com/docs/drivers/rust/current/fundamentals/connections/connection-guide/
@@ -45,10 +42,8 @@ pub const ClientOptions = struct {
                 const credentials = remaining[0..i];
                 const splitIndex = mem.indexOf(u8, credentials, ":").?;
                 options.credentials = .{
-                    .username_password = .{
-                        .user = credentials[0..splitIndex],
-                        .pass = credentials[splitIndex + 1 ..],
-                    },
+                    .user = credentials[0..splitIndex],
+                    .pass = credentials[splitIndex + 1 ..],
                 };
                 remaining = remaining[i + 1 ..];
             }
@@ -95,7 +90,7 @@ test "ClientOptions.fromConnectionString" {
     defer options.deinit();
 
     try std.testing.expectEqualDeep(
-        UsernamePassword{ .user = "user", .pass = "pass" },
-        options.credentials.?.username_password,
+        Credentials{ .user = "user", .pass = "pass" },
+        options.credentials.?,
     );
 }

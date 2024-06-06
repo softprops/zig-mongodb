@@ -68,7 +68,7 @@ pub const OpCode = enum(i32) {
 // https://www.mongodb.com/docs/manual/reference/mongodb-wire-protocol/#standard-message-header
 pub const Header = struct {
     /// The total size of the message in bytes. This total includes the 4 bytes that holds the message length.
-    message_len: i32,
+    //message_len: i32,
     /// A client or database-generated identifier that uniquely identifies the message
     request_id: i32,
     /// The requestID taken from the messages from the client.
@@ -98,3 +98,25 @@ pub const OpReply = struct {
     number_returned: i32,
     documents: []const Document,
 };
+
+pub const Section = struct {
+    kind: SectionKind,
+    payload: []const u8,
+};
+
+pub fn request(allocator: std.mem.Allocator, header: Header, flags: u32, sections: []const Section) ![]u8 {
+    var buf = std.ArrayList(u8).init(allocator);
+    defer buf.deinit();
+
+    var payload = buf.writer();
+    // msg header
+    try payload.writeInt(i32, header.request_id, .little); // request id
+    try payload.writeInt(i32, header.response_to, .little); // response to
+    try payload.writeInt(i32, header.op_code.toInt(), .little); // op code
+    try payload.writeInt(u32, flags, .little); // flags
+    for (sections) |section| {
+        try payload.writeInt(u8, section.kind.toInt(), .little);
+        try payload.writeAll(section.payload);
+    }
+    return try buf.toOwnedSlice();
+}
