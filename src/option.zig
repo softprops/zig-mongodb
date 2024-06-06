@@ -23,7 +23,7 @@ pub const ClientOptions = struct {
     credentials: ?Credentials = null,
     allocator: ?mem.Allocator = null,
 
-    fn deinit(self: *@This()) void {
+    pub fn deinit(self: *@This()) void {
         if (self.allocator) |alloc| {
             alloc.free(self.addresses);
         }
@@ -31,7 +31,7 @@ pub const ClientOptions = struct {
 
     // https://www.mongodb.com/docs/manual/reference/connection-string/#std-label-connections-standard-connection-string-format
     // https://github.com/mongodb/specifications/blob/master/source/connection-string/connection-string-spec.md#general-syntax
-    fn fromConnectionString(allocator: mem.Allocator, url: []const u8) !ClientOptions {
+    pub fn fromConnectionString(allocator: mem.Allocator, url: []const u8) !ClientOptions {
         // todo: move to separate connection.zig file
         var options = ClientOptions{ .allocator = allocator };
         var remaining = url;
@@ -54,7 +54,7 @@ pub const ClientOptions = struct {
             }
             if (mem.indexOf(u8, remaining, "/")) |i| {
                 options.database = remaining[i + 1 ..];
-                remaining = remaining[i..];
+                remaining = remaining[0..i];
             }
             const hostCount = std.mem.count(u8, remaining, ",");
             var addrBuf = try std.ArrayList(std.net.Address).initCapacity(allocator, hostCount + 1);

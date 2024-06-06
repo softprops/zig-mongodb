@@ -32,7 +32,7 @@ pub const Client = struct {
 
     /// https://www.mongodb.com/docs/manual/reference/command/hello
     /// handshake https://github.com/mongodb/specifications/blob/master/source/auth/auth.md#authentication
-    fn hello(self: *@This()) !void {
+    pub fn hello(self: *@This()) !void {
         if (self.options.database == null) {
             return error.DatabaseNotSelected;
         }
