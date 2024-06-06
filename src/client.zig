@@ -26,7 +26,7 @@ pub const Client = struct {
 
     // caller owns calling stream.deinit()
     fn connection(self: *@This()) !std.net.Stream {
-        // todo: impl connection pull
+        // todo: impl connection pool
         return try std.net.tcpConnectToAddress(self.options.addresses[0]);
     }
 
@@ -46,38 +46,32 @@ pub const Client = struct {
         defer bsonWriter.deinit();
         // hello command
         try bsonWriter.write(
-            RawBson.document(
-                &.{
-                    .{ "hello", RawBson.int32(1) },
-                    .{ "$db", RawBson.string(self.options.database.?) },
-                    .{
-                        "client", RawBson.document(
-                            &.{
-                                .{
-                                    "driver",
-                                    RawBson.document(
-                                        &.{
-                                            .{ "name", RawBson.string("zig-bson") },
-                                            .{ "version", RawBson.string("0.1.0") },
-                                        },
-                                    ),
+            RawBson.document(&.{
+                .{ "hello", RawBson.int32(1) },
+                .{ "$db", RawBson.string(self.options.database.?) },
+                .{
+                    "client", RawBson.document(&.{
+                        .{
+                            "driver",
+                            RawBson.document(
+                                &.{
+                                    .{ "name", RawBson.string("zig-bson") },
+                                    .{ "version", RawBson.string("0.1.0") },
                                 },
+                            ),
+                        },
+                        .{
+                            "os",
+                            RawBson.document(&.{
+                                // https://github.com/mongodb/specifications/blob/master/source/mongodb-handshake/handshake.rst#clientostype
                                 .{
-                                    "os",
-                                    RawBson.document(
-                                        &.{
-                                            // https://github.com/mongodb/specifications/blob/master/source/mongodb-handshake/handshake.rst#clientostype
-                                            .{
-                                                "type", OS_TYPE,
-                                            },
-                                        },
-                                    ),
+                                    "type", OS_TYPE,
                                 },
-                            },
-                        ),
-                    },
+                            }),
+                        },
+                    }),
                 },
-            ),
+            }),
         );
         const bsonBytes = try bsonBuf.toOwnedSlice();
         defer self.allocator.free(bsonBytes);

@@ -104,6 +104,7 @@ pub const Section = struct {
     payload: []const u8,
 };
 
+/// caller owns freeing returned bytes
 pub fn request(allocator: std.mem.Allocator, header: Header, flags: u32, sections: []const Section) ![]u8 {
     var buf = std.ArrayList(u8).init(allocator);
     defer buf.deinit();
