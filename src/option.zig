@@ -23,12 +23,21 @@ pub const ClientOptions = struct {
         },
     },
     credentials: ?Credentials = null,
+    options: ?std.StringHashMap([]const u8) = null,
     allocator: ?mem.Allocator = null,
 
     pub fn deinit(self: *@This()) void {
         if (self.allocator) |alloc| {
             alloc.free(self.addresses);
         }
+        if (self.options) |o| {
+            var oo = o;
+            oo.deinit();
+        }
+    }
+
+    fn decode(val: []const u8) []u8 {
+        return std.Uri.percentDecodeInPlace(@constCast(val));
     }
 
     // https://www.mongodb.com/docs/manual/reference/connection-string/#std-label-connections-standard-connection-string-format
@@ -45,23 +54,29 @@ pub const ClientOptions = struct {
             remaining = remaining["mongodb://".len..];
             if (mem.indexOf(u8, remaining, "@")) |i| {
                 // todo: percent decode - $ : / ? # [ ] @
+
                 const credentials = remaining[0..i];
                 const splitIndex = mem.indexOf(u8, credentials, ":").?;
                 options.credentials = .{
-                    .user = credentials[0..splitIndex],
-                    .pass = credentials[splitIndex + 1 ..],
+                    .user = decode(credentials[0..splitIndex]),
+                    .pass = decode(credentials[splitIndex + 1 ..]),
                 };
                 remaining = remaining[i + 1 ..];
             }
             if (mem.indexOf(u8, remaining, "?")) |i| {
                 // todo: parse optional options
                 // https://github.com/mongodb/specifications/blob/master/source/connection-string/connection-string-spec.md#keys
-                _ = remaining[i..];
+                var opts = std.mem.split(u8, remaining[i + 1 ..], "&");
+                options.options = std.StringHashMap([]const u8).init(allocator);
+                while (opts.next()) |opt| {
+                    var components = std.mem.split(u8, opt, "=");
+                    try options.options.?.put(components.next().?, decode(components.next().?));
+                }
+
                 remaining = remaining[0..i];
             }
             if (mem.indexOf(u8, remaining, "/")) |i| {
-                // todo: url decoded
-                options.database = remaining[i + 1 ..];
+                options.database = decode(remaining[i + 1 ..]);
                 remaining = remaining[0..i];
             }
             const hostCount = std.mem.count(u8, remaining, ",");
@@ -98,6 +113,8 @@ test "ClientOptions.fromConnectionString" {
         "mongodb://user:pass@127.0.0.1/database?foo=bar",
     );
     defer options.deinit();
+
+    try std.testing.expectEqualStrings("bar", options.options.?.get("foo").?);
 
     try std.testing.expectEqualDeep(
         (try std.net.Address.parseIp("127.0.0.1", 27017)).in,
