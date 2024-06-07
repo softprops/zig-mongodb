@@ -3,6 +3,7 @@ const ClientOptions = @import("option.zig").ClientOptions;
 const protocol = @import("protocol.zig");
 const bson = @import("bson");
 const RawBson = bson.types.RawBson;
+const auth = @import("auth.zig");
 
 const OS_TYPE = RawBson.string(switch (@import("builtin").os.tag) {
     .macos => "Darwin",
@@ -46,9 +47,19 @@ pub const Client = struct {
         defer bsonWriter.deinit();
         // hello command
         try bsonWriter.write(
+            // RawBson.document(&.{
+            //     .{ "listDatabases", RawBson.int32(1) },
+            //     .{ "$db", RawBson.string("admin") },
+            // }),
             RawBson.document(&.{
                 .{ "hello", RawBson.int32(1) },
-                .{ "$db", RawBson.string(self.options.database.?) },
+                // .{
+                //     "saslSupportedMechs", RawBson.array(&.{
+                //         RawBson.string(@tagName(auth.Mechansim.@"SCRAM-SHA-1")),
+                //         RawBson.string(@tagName(auth.Mechansim.@"SCRAM-SHA-256")),
+                //     }),
+                // },
+                .{ "$db", RawBson.string("admin") },
                 .{
                     "client", RawBson.document(&.{
                         .{
