@@ -1,6 +1,8 @@
 const std = @import("std");
 const mem = std.mem;
 
+const DEFAULT_PORT: u16 = 27017;
+
 const Credentials = struct {
     user: []const u8,
     pass: []const u8,
@@ -16,7 +18,7 @@ pub const ClientOptions = struct {
         .{
             .in = std.net.Ip4Address.init(
                 .{ 127, 0, 0, 1 },
-                27017,
+                DEFAULT_PORT,
             ),
         },
     },
@@ -32,9 +34,13 @@ pub const ClientOptions = struct {
     // https://www.mongodb.com/docs/manual/reference/connection-string/#std-label-connections-standard-connection-string-format
     // https://github.com/mongodb/specifications/blob/master/source/connection-string/connection-string-spec.md#general-syntax
     pub fn fromConnectionString(allocator: mem.Allocator, url: []const u8) !ClientOptions {
-        // todo: move to separate connection.zig file
         var options = ClientOptions{ .allocator = allocator };
         var remaining = url;
+        if (mem.startsWith(u8, url, "mongodb+srv://")) {
+            // requires a dns query which requires udp and likely a separate library, deferring for now
+            std.log.err("srv connection strings not yet supported", .{});
+            return error.SrvNotSupported;
+        }
         if (mem.startsWith(u8, url, "mongodb://")) {
             remaining = remaining["mongodb://".len..];
             if (mem.indexOf(u8, remaining, "@")) |i| {
@@ -49,10 +55,12 @@ pub const ClientOptions = struct {
             }
             if (mem.indexOf(u8, remaining, "?")) |i| {
                 // todo: parse optional options
+                // https://github.com/mongodb/specifications/blob/master/source/connection-string/connection-string-spec.md#keys
                 _ = remaining[i..];
                 remaining = remaining[0..i];
             }
             if (mem.indexOf(u8, remaining, "/")) |i| {
+                // todo: url decoded
                 options.database = remaining[i + 1 ..];
                 remaining = remaining[0..i];
             }
@@ -60,19 +68,20 @@ pub const ClientOptions = struct {
             var addrBuf = try std.ArrayList(std.net.Address).initCapacity(allocator, hostCount + 1);
             defer addrBuf.deinit();
             var hosts = std.mem.split(u8, remaining, ",");
-            while (hosts.next()) |host| {
-                const hostPortIndex = mem.indexOf(u8, host, ":").?;
-                var addrs = try std.net.getAddressList(
-                    allocator,
-                    host[0..hostPortIndex],
-                    try std.fmt.parseInt(
-                        u16,
-                        host[hostPortIndex + 1 ..],
-                        10,
-                    ),
-                );
-                defer addrs.deinit();
-                addrBuf.appendAssumeCapacity(addrs.addrs[1]);
+            while (hosts.next()) |hostStr| {
+                // It can identify either a hostname, IP address, IP Literal, or UNIX domain socket
+                // currently assuming hostname + port
+                // https://github.com/mongodb/specifications/blob/master/source/connection-string/connection-string-spec.md#host
+                var components = mem.split(u8, hostStr, ":");
+                const host = components.next().?;
+                const port = if (components.next()) |p| try std.fmt.parseInt(u16, p, 10) else DEFAULT_PORT;
+                const addr = std.net.Address.resolveIp(host, port) catch blk: {
+                    var addrs = try std.net.getAddressList(allocator, host, port);
+                    defer addrs.deinit();
+                    break :blk addrs.addrs[1];
+                };
+
+                addrBuf.appendAssumeCapacity(addr);
             }
             options.addresses = try addrBuf.toOwnedSlice();
 
@@ -82,12 +91,18 @@ pub const ClientOptions = struct {
     }
 };
 
+// see also https://github.com/mongodb/specifications/blob/master/source/connection-string/tests/README.md
 test "ClientOptions.fromConnectionString" {
     var options = try ClientOptions.fromConnectionString(
         std.testing.allocator,
-        "mongodb://user:pass@localhost:27017",
+        "mongodb://user:pass@127.0.0.1/database?foo=bar",
     );
     defer options.deinit();
+
+    try std.testing.expectEqualDeep(
+        (try std.net.Address.parseIp("127.0.0.1", 27017)).in,
+        options.addresses[0].in,
+    );
 
     try std.testing.expectEqualDeep(
         Credentials{ .user = "user", .pass = "pass" },
