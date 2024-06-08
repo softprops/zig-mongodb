@@ -8,7 +8,7 @@
 
 ---
 
-[![Main](https://github.com/softprops/zig-monogo/actions/workflows/ci.yml/badge.svg)](https://github.com/softprops/zig-monogo/actions/workflows/ci.yml) ![License Info](https://img.shields.io/github/license/softprops/zig-monogo) ![Release](https://img.shields.io/github/v/release/softprops/zig-monogo) [![Zig Support](https://img.shields.io/badge/zig-0.13.0-black?logo=zig)](https://ziglang.org/documentation/0.13.0/)
+[![CI](https://github.com/softprops/zig-mongo/actions/workflows/ci.yml/badge.svg)](https://github.com/softprops/zig-mongo/actions/workflows/ci.yml) ![License Info](https://img.shields.io/github/license/softprops/zig-mongo) ![Release](https://img.shields.io/github/v/release/softprops/zig-mongo) [![Zig Support](https://img.shields.io/badge/zig-0.13.0-black?logo=zig)](https://ziglang.org/documentation/0.13.0/)
 
 
 A work in progress
