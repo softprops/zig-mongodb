@@ -23,6 +23,65 @@ const DRIVER = RawBson.document(
     },
 );
 
+// provides reader/writer impl over both plain and tls streams
+pub const Stream = union(enum) {
+    const Tls = struct {
+        plain: std.net.Stream,
+        tls: std.crypto.tls.Client,
+    };
+    plain: std.net.Stream,
+    tls: Tls,
+
+    pub const ReadError = anyerror; // std.posix.ReadError;
+    pub const WriteError = anyerror; //std.posix.WriteError;
+
+    pub const Reader = std.io.Reader(Stream, ReadError, read);
+    pub const Writer = std.io.Writer(Stream, WriteError, write);
+
+    fn tls(stream: std.net.Stream, c: std.crypto.tls.Client) @This() {
+        return .{ .tls = .{ .plain = stream, .tls = c } };
+    }
+
+    fn plain(stream: std.net.Stream) @This() {
+        return .{ .plain = stream };
+    }
+
+    pub fn reader(self: @This()) Reader {
+        return .{ .context = self };
+    }
+
+    pub fn writer(self: @This()) Writer {
+        return .{ .context = self };
+    }
+
+    fn close(self: @This()) void {
+        switch (self) {
+            .plain => |s| s.close(),
+            .tls => {},
+        }
+    }
+
+    pub fn read(self: Stream, buffer: []u8) ReadError!usize {
+        return switch (self) {
+            .plain => |s| s.read(buffer),
+            .tls => |s| blk: {
+                var vs = s;
+                break :blk vs.tls.read(s.plain, buffer);
+            },
+        };
+    }
+
+    pub fn write(self: Stream, buffer: []const u8) WriteError!usize {
+        return switch (self) {
+            .plain => |s| s.write(buffer),
+            .tls => |s| blk: {
+                var vs = s;
+                break :blk vs.tls.write(s.plain, buffer);
+            },
+        };
+    }
+};
+
 pub const Client = struct {
     allocator: std.mem.Allocator,
     options: ClientOptions,
@@ -35,8 +94,9 @@ pub const Client = struct {
         self.options.deinit();
     }
 
+    // todo. return a wrapper type that adapts to both cleartext and tls streams via tls.Client
     // caller owns calling stream.deinit()
-    fn connection(self: *@This()) !std.net.Stream {
+    fn connection(self: *@This()) !Stream {
         // todo: set client timeouts, i.e. xxxTimeoutMS, with something like the following
         //const timeout = std.posix.timeval{
         //    .tv_sec = @as(i32, n),
@@ -46,7 +106,10 @@ pub const Client = struct {
         //std.posix.setsockopt(stream.handle, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
 
         // todo: impl connection pool
-        return try std.net.tcpConnectToAddress(self.options.addresses[0]);
+        const plain = try std.net.tcpConnectToAddress(self.options.addresses[0]);
+        // if tls
+        //return Stream.tls(plain, try std.crypto.tls.Client.init(plain, .{}, "???"));
+        return Stream.plain(plain);
     }
 
     pub fn authenticate(self: *@This()) !void {
@@ -154,7 +217,7 @@ pub const Client = struct {
         }
 
         const stream = try self.connection();
-        defer stream.close();
+        // defer stream.close();
 
         const clientFirst = if (self.options.credentials) |creds| try (creds.mechansim orelse auth.Mechansim.@"SCRAM-SHA-256").speculativeAuthenticate(self.allocator, creds, "admin") else null;
 
@@ -188,11 +251,9 @@ pub const Client = struct {
                 // if we have credentials on file, save an extra server round trip by including client first
                 // auth request with hello command. we then expect the server to response its response
                 // embedded within hello's response
+                // https://github.com/mongodb/specifications/blob/91de38e3ddfee11ae51d3a062535b877e0051527/source/mongodb-handshake/handshake.rst#speculative-authentication
                 .{
-                    "speculativeAuthenticate", if (clientFirst) |cf| blk: {
-                        var vcf = cf;
-                        break :blk vcf.sasl();
-                    } else RawBson.null(),
+                    "speculativeAuthenticate", if (clientFirst) |cf| cf.sasl() else RawBson.null(),
                 },
             }),
         );
@@ -216,14 +277,25 @@ pub const Client = struct {
             return error.InvalidRequest;
         }
 
-        std.debug.print("\n\n<- hello resp raw {any}\n\n", .{doc.value});
+        std.debug.print("<- hello resp raw {any}\n\n", .{doc.value});
 
         const helloResp = try doc.value.into(self.allocator, HelloResponse);
 
         if (self.options.credentials) |creds| {
+            std.debug.print("speculativeAuthenticate response {?any}", .{helloResp.value.speculativeAuthenticate});
             // todo: include hello responses' speculative auth here to continue/complete auth conversation
             try creds.authenticate(self.allocator, stream, null);
         }
+
+        // write
+        try protocol.write(self.allocator, stream, RawBson.document(&.{
+            .{ "find", RawBson.string("system.users") },
+            .{ "$db", RawBson.string("admin") },
+        }));
+        var findDoc = try protocol.read(self.allocator, stream);
+        defer findDoc.deinit();
+        std.debug.print("findDoc {any}", .{findDoc.value});
+
         return helloResp;
     }
 };
@@ -291,6 +363,7 @@ test "hello" {
         var vresp = resp;
         vresp.deinit();
     } else |e| {
+        std.debug.print("error? {any}\n", .{e});
         switch (e) {
             error.ConnectionRefused => {
                 std.debug.print("mongodb not running {any}\n", .{e});

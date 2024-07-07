@@ -2,6 +2,7 @@ const std = @import("std");
 const Document = @import("bson").types.Document;
 const bson = @import("bson");
 const RawBson = @import("bson").types.RawBson;
+const Stream = @import("client.zig").Stream;
 
 pub const SectionKind = enum(u8) {
     body = 0,
@@ -106,7 +107,8 @@ pub const Section = struct {
     payload: []const u8,
 };
 
-pub fn write(allocator: std.mem.Allocator, stream: std.net.Stream, command: RawBson) !void {
+pub fn write(allocator: std.mem.Allocator, stream: Stream, command: RawBson) !void {
+    var writer = stream.writer();
     std.debug.print("\n -> writing command {any}\n\n", .{command});
     // assume op_msg for now
     var bsonBuf = std.ArrayList(u8).init(allocator);
@@ -129,8 +131,8 @@ pub fn write(allocator: std.mem.Allocator, stream: std.net.Stream, command: RawB
 
     // checksum
 
-    try stream.writer().writeInt(i32, @intCast(requestBytes.len + @sizeOf(i32)), .little);
-    try stream.writer().writeAll(requestBytes);
+    try writer.writeInt(i32, @intCast(requestBytes.len + @sizeOf(i32)), .little);
+    try writer.writeAll(requestBytes);
 }
 
 /// caller owns freeing returned bytes
@@ -152,14 +154,15 @@ pub fn request(allocator: std.mem.Allocator, header: Header, flags: u32, section
 }
 
 // compare with https://github.com/mongodb/mongo-rust-driver/blob/b781af26dfb17fe62823a866a025de9fb102e0b3/src/cmap/conn/wire/message.rs#L182
-pub fn read(allocator: std.mem.Allocator, stream: std.net.Stream) !bson.Owned(RawBson) {
+pub fn read(allocator: std.mem.Allocator, stream: Stream) !bson.Owned(RawBson) {
+    var reader = stream.reader();
     // read std header
     // https://www.mongodb.com/docs/manual/reference/mongodb-wire-protocol/#standard-message-header
-    const msgLen = try stream.reader().readInt(i32, .little);
+    const msgLen = try reader.readInt(i32, .little);
     const responseBuf = try allocator.alloc(u8, @intCast(msgLen - @sizeOf(i32)));
     //errdefer allocator.free(responseBuf);
     defer allocator.free(responseBuf);
-    _ = try stream.reader().readAll(responseBuf);
+    _ = try reader.readAll(responseBuf);
     var fbs = std.io.fixedBufferStream(responseBuf);
     var responseReader = std.io.countingReader(fbs.reader());
     _ = try responseReader.reader().readInt(i32, .little); // request id

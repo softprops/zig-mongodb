@@ -98,6 +98,8 @@ pub const ClientOptions = struct {
                             _ = components.next();
                             const port = if (components.next()) |p| try std.fmt.parseInt(u16, p, 10) else DEFAULT_PORT;
                             const host = components.next().?;
+                            std.debug.print("srv host {s}\n", .{host});
+
                             const addr = std.net.Address.resolveIp(host, port) catch blk: {
                                 var addrs = try std.net.getAddressList(
                                     options.arena.?.allocator(),

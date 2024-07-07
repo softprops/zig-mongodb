@@ -3,6 +3,7 @@ const RawBson = @import("bson").types.RawBson;
 const bson = @import("bson");
 const protocol = @import("protocol.zig");
 const err = @import("err.zig");
+const Stream = @import("client.zig").Stream;
 
 /// captures the first round of saml auth either initiated proactively as part of a connection
 /// handshake or a request to authenticate via auth mechansim
@@ -27,7 +28,7 @@ pub const Credentials = struct {
     mechansim: ?Mechansim = null,
     mechanism_properties: ?std.StringHashMap([]const u8) = null,
 
-    pub fn authenticate(self: @This(), allocator: std.mem.Allocator, stream: std.net.Stream, speculativeAuth: ?FirstRound) !void {
+    pub fn authenticate(self: @This(), allocator: std.mem.Allocator, stream: Stream, speculativeAuth: ?FirstRound) !void {
         if (self.mechansim) |mech| {
             try mech.authenticate(allocator, self, stream, speculativeAuth);
         }
@@ -78,7 +79,7 @@ pub const Mechansim = enum {
     }
 
     // authenticates a tcp connection to a mongodb server
-    fn authenticate(self: @This(), allocator: std.mem.Allocator, credentials: Credentials, stream: std.net.Stream, speculativeAuth: ?FirstRound) !void {
+    fn authenticate(self: @This(), allocator: std.mem.Allocator, credentials: Credentials, stream: Stream, speculativeAuth: ?FirstRound) !void {
         const db = "admin";
         switch (self) {
             // https://en.wikipedia.org/wiki/Salted_Challenge_Response_Authentication_Mechanism
@@ -90,11 +91,8 @@ pub const Mechansim = enum {
                     try protocol.write(allocator, stream, cf.sasl());
                     break :blk FirstRound.init(cf, try protocol.read(allocator, stream));
                 };
-
                 defer clientFirst.deinit();
 
-                // var clientFirstResp = try protocol.read(allocator, stream);
-                //defer clientFirstResp.deinit();
                 var serverFirst = try Scram.ServerFirst.from(allocator, clientFirst.response.value);
                 defer serverFirst.deinit();
                 try serverFirst.validate(clientFirst.request.nonce);
@@ -181,7 +179,7 @@ pub const Scram = enum {
             self.allocator.free(self.message);
         }
 
-        pub fn sasl(self: *@This()) RawBson {
+        pub fn sasl(self: @This()) RawBson {
             return Sasl.start(self.mechanism, self.message, self.db);
         }
     };
@@ -420,6 +418,7 @@ const Sasl = struct {
                 .{ "$db", RawBson.string(db) },
                 .{ "mechanism", RawBson.string(@tagName(mechanism)) },
                 .{ "payload", RawBson.binary(payload, .binary) },
+                .{ "autoAuthorize", RawBson.int32(1) },
                 // why does this cause a segfault?
                 // .{
                 //     "options", RawBson.document(
