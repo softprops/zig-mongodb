@@ -350,15 +350,9 @@ test "find" {
 test "hello" {
     var client = Client.init(
         std.testing.allocator,
-        .{
-            .database = "test",
-            .credentials = .{
-                .username = "demo",
-                .password = "omed",
-                .mechansim = .@"SCRAM-SHA-256", // default?
-            },
-        },
+        try ClientOptions.fromConnectionString(std.testing.allocator, "mongodb://demo:omed@localhost/test"),
     );
+    defer client.deinit();
     if (client.hello()) |resp| {
         var vresp = resp;
         vresp.deinit();
