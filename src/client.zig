@@ -139,7 +139,9 @@ pub const Client = struct {
         const stream = try self.connection();
         defer stream.close();
 
-        const clientFirst: ?auth.Scram.ClientFirst = if (self.options.credentials) |creds| try creds.mechansim.?.speculativeAuthenticate(self.allocator, creds, "admin") else null;
+        const clientFirst: ?auth.Scram.ClientFirst = if (self.options.credentials) |creds| try (creds.mechansim orelse auth.Mechansim.@"SCRAM-SHA-256").speculativeAuthenticate(self.allocator, creds, "admin") else null;
+
+        const saslSupportedMechs = if (self.options.credentials) |creds| try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ if (creds.mechansim) |m| m.defaultSource(null) else "admin", creds.username }) else null;
 
         // write request
         try protocol.write(
@@ -148,7 +150,8 @@ pub const Client = struct {
             RawBson.document(&.{
                 .{ "hello", RawBson.int32(1) },
                 .{ "$db", RawBson.string("admin") },
-                .{ "saslSupportedMechs", RawBson.string("admin.demo") }, // todo: derive this, db.username
+                // only include if username is present by mechansim is not
+                .{ "saslSupportedMechs", if (saslSupportedMechs) |sm| RawBson.string(sm) else RawBson.null() }, // todo: derive this, db.username
                 .{
                     "client", RawBson.document(&.{
                         .{
@@ -171,6 +174,9 @@ pub const Client = struct {
                         },
                     }),
                 },
+                // if we have credentials on file, save an extra server round trip by including client first
+                // auth request with hello command. we then expect the server to response its response
+                // embedded within hello's response
                 .{
                     "speculativeAuthenticate", if (clientFirst) |cf| blk: {
                         var vcf = cf;
@@ -185,6 +191,8 @@ pub const Client = struct {
             vcf.deinit();
         }
 
+        if (saslSupportedMechs) |sm| self.allocator.free(sm);
+
         // todo optional CRC-32C checksum
 
         var doc = try protocol.read(self.allocator, stream);
@@ -193,9 +201,9 @@ pub const Client = struct {
         std.debug.print("\nhello resp raw {any}\n\n", .{doc.value});
 
         const helloResp = try doc.value.into(self.allocator, HelloResponse);
-        std.debug.print("hello resp {any}\n", .{helloResp.value});
 
         if (self.options.credentials) |creds| {
+            // todo: include hello responses' speculative auth here to continue/complete auth conversation
             try creds.authenticate(self.allocator, stream, null);
         }
         return helloResp;

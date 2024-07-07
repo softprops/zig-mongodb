@@ -113,7 +113,6 @@ pub fn write(allocator: std.mem.Allocator, stream: std.net.Stream, command: RawB
     defer bsonBuf.deinit();
     var bsonWriter = bson.writer(allocator, bsonBuf.writer());
     defer bsonWriter.deinit();
-    //std.debug.print("doc {any}", .{command});
     try bsonWriter.write(command);
     const bsonBytes = try bsonBuf.toOwnedSlice();
     defer allocator.free(bsonBytes);

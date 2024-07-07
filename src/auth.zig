@@ -24,7 +24,7 @@ pub const Credentials = struct {
     username: []const u8,
     password: []const u8,
     source: ?[]const u8 = null,
-    mechansim: ?Mechansim = .@"SCRAM-SHA-256",
+    mechansim: ?Mechansim,
     mechanism_properties: ?std.StringHashMap([]const u8) = null,
 
     pub fn authenticate(self: @This(), allocator: std.mem.Allocator, stream: std.net.Stream, speculativeAuth: ?FirstRound) !void {
@@ -59,6 +59,18 @@ pub const Mechansim = enum {
         writer: anytype,
     ) !void {
         try writer.print("{s}", .{@tagName(self)});
+    }
+
+    pub fn defaultSource(self: @This(), db: ?[]const u8) []const u8 {
+        return switch (self) {
+            .@"MONGODB-CR",
+            .@"SCRAM-SHA-1",
+            .@"SCRAM-SHA-256",
+            => db orelse "admin",
+            .@"MONGODB-X509", .@"MONGODB-OIDC", .@"MONGODB-AWS" => "$external",
+            .PLAIN => db orelse "$external",
+            .GSSAPI => "",
+        };
     }
 
     pub fn speculativeAuthenticate(self: @This(), allocator: std.mem.Allocator, credentials: Credentials, db: []const u8) !Scram.ClientFirst {
