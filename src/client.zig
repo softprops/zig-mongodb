@@ -131,7 +131,7 @@ pub const Client = struct {
     /// https://www.mongodb.com/docs/manual/reference/command/hello
     /// handshake https://github.com/mongodb/specifications/blob/master/source/auth/auth.md#authentication
     /// speculative auth https://github.com/mongodb/mongo/blob/master/src/mongo/db/auth/README.md#speculative-authentication
-    pub fn hello(self: *@This()) !void {
+    pub fn hello(self: *@This()) !bson.Owned(HelloResponse) {
         if (self.options.database == null) {
             return error.DatabaseNotSelected;
         }
@@ -192,13 +192,13 @@ pub const Client = struct {
 
         std.debug.print("\nhello resp raw {any}\n\n", .{doc.value});
 
-        var helloResp = try doc.value.into(self.allocator, HelloResponse);
-        defer helloResp.deinit();
+        const helloResp = try doc.value.into(self.allocator, HelloResponse);
         std.debug.print("hello resp {any}\n", .{helloResp.value});
 
         if (self.options.credentials) |creds| {
             try creds.authenticate(self.allocator, stream, null);
         }
+        return helloResp;
     }
 };
 
@@ -261,7 +261,10 @@ test "hello" {
             },
         },
     );
-    client.hello() catch |e| {
+    if (client.hello()) |resp| {
+        var vresp = resp;
+        vresp.deinit();
+    } else |e| {
         switch (e) {
             error.ConnectionRefused => {
                 std.debug.print("mongodb not running {any}\n", .{e});
@@ -269,5 +272,5 @@ test "hello" {
             else => return e,
         }
         // catch errors until we set up a proper integration testing bootstrap on host
-    };
+    }
 }

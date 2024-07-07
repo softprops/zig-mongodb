@@ -14,7 +14,8 @@ pub fn main() !void {
             try mongodb.ClientOptions.fromConnectionString(allocator, mc),
         );
         defer client.deinit();
-        try client.hello();
+        var resp = try client.hello();
+        defer resp.deinit();
     } else {
         std.log.err("missing MONGO_CONNECTION env var", .{});
     }
