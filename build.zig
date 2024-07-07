@@ -9,10 +9,16 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     }).module("bson");
+    const doh = b.dependency("doh", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("doh");
+
     const mongodb = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),
         .imports = &.{
             .{ .name = "bson", .module = bson },
+            .{ .name = "doh", .module = doh },
         },
     });
 
@@ -26,6 +32,7 @@ pub fn build(b: *std.Build) !void {
         .filters = if (b.args) |args| args else &.{},
     });
     unit_tests.root_module.addImport("bson", bson);
+    unit_tests.root_module.addImport("doh", doh);
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);

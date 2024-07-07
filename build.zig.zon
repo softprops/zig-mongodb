@@ -7,6 +7,10 @@
             .url = "https://github.com/softprops/zig-bson/archive/refs/tags/v0.1.3.tar.gz",
             .hash = "122016092603ca2b0d95e8547f1e2d55b27b66cd46dc5d07f5b98e20e99c33cde755",
         },
+        .doh = .{
+            .url = "https://github.com/softprops/zig-doh/archive/refs/tags/v0.1.0.tar.gz",
+            .hash = "122041704727324b9494c2f70e7b53327f4136e581f15823048f9b81df8c2061a13e",
+        },
     },
     .paths = .{
         "build.zig",
