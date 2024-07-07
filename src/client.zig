@@ -28,6 +28,14 @@ pub const Client = struct {
 
     // caller owns calling stream.deinit()
     fn connection(self: *@This()) !std.net.Stream {
+        // todo: set client timeouts, i.e. xxxTimeoutMS, with something like the following
+        //const timeout = std.posix.timeval{
+        //    .tv_sec = @as(i32, n),
+        //    .tv_usec = @as(i32, 0),
+        //};
+        //
+        //std.posix.setsockopt(stream.handle, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
+
         // todo: impl connection pool
         return try std.net.tcpConnectToAddress(self.options.addresses[0]);
     }

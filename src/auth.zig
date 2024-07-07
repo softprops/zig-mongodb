@@ -24,7 +24,7 @@ pub const Credentials = struct {
     username: []const u8,
     password: []const u8,
     source: ?[]const u8 = null,
-    mechansim: ?Mechansim,
+    mechansim: ?Mechansim = null,
     mechanism_properties: ?std.StringHashMap([]const u8) = null,
 
     pub fn authenticate(self: @This(), allocator: std.mem.Allocator, stream: std.net.Stream, speculativeAuth: ?FirstRound) !void {
