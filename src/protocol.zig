@@ -116,6 +116,7 @@ pub fn write(allocator: std.mem.Allocator, stream: std.net.Stream, command: RawB
     try bsonWriter.write(command);
     const bsonBytes = try bsonBuf.toOwnedSlice();
     defer allocator.free(bsonBytes);
+
     const requestBytes = try request(
         allocator,
         .{ .request_id = 1, .response_to = 0, .op_code = .msg },
@@ -125,6 +126,9 @@ pub fn write(allocator: std.mem.Allocator, stream: std.net.Stream, command: RawB
         },
     );
     defer allocator.free(requestBytes);
+
+    // checksum
+
     try stream.writer().writeInt(i32, @intCast(requestBytes.len + @sizeOf(i32)), .little);
     try stream.writer().writeAll(requestBytes);
 }
