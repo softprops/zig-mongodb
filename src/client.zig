@@ -6,6 +6,7 @@ const RawBson = bson.types.RawBson;
 const auth = @import("auth.zig");
 const err = @import("err.zig");
 
+// https://github.com/mongodb/specifications/blob/master/source/mongodb-handshake/handshake.rst#client-os-type
 const OS_TYPE = RawBson.string(switch (@import("builtin").os.tag) {
     .macos => "Darwin",
     .windows => "Windows",
@@ -13,6 +14,14 @@ const OS_TYPE = RawBson.string(switch (@import("builtin").os.tag) {
     .freebsd => "BSD",
     else => "Unix",
 });
+
+// https://github.com/mongodb/specifications/blob/master/source/mongodb-handshake/handshake.rst#client-driver-name
+const DRIVER = RawBson.document(
+    &.{
+        .{ "name", RawBson.string("zig-bson") },
+        .{ "version", RawBson.string("0.1.0") },
+    },
+);
 
 pub const Client = struct {
     allocator: std.mem.Allocator,
@@ -163,13 +172,7 @@ pub const Client = struct {
                 .{
                     "client", RawBson.document(&.{
                         .{
-                            "driver",
-                            RawBson.document(
-                                &.{
-                                    .{ "name", RawBson.string("zig-bson") },
-                                    .{ "version", RawBson.string("0.1.0") },
-                                },
-                            ),
+                            "driver", DRIVER,
                         },
                         .{
                             "os",
