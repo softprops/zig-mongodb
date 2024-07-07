@@ -4,8 +4,8 @@
     .minimum_zig_version = "0.13.0",
     .dependencies = .{
         .bson = .{
-            .url = "https://github.com/softprops/zig-bson/archive/refs/tags/v0.1.1.tar.gz",
-            .hash = "12203f4de142c7c89acd5d533b9264ea8d252f51f121228645aa5c106aba2ea7199c",
+            .url = "https://github.com/softprops/zig-bson/archive/refs/tags/v0.1.3.tar.gz",
+            .hash = "122016092603ca2b0d95e8547f1e2d55b27b66cd46dc5d07f5b98e20e99c33cde755",
         },
     },
     .paths = .{

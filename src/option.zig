@@ -29,6 +29,7 @@ pub const ClientOptions = struct {
 
     // https://www.mongodb.com/docs/manual/reference/connection-string/#std-label-connections-standard-connection-string-format
     // https://github.com/mongodb/specifications/blob/master/source/connection-string/connection-string-spec.md#general-syntax
+    // https://www.mongodb.com/docs/manual/reference/connection-string/#std-label-connections-dns-seedlist
     pub fn fromConnectionString(allocator: mem.Allocator, url: []const u8) !ClientOptions {
         var options = ClientOptions{ .arena = std.heap.ArenaAllocator.init(allocator) };
         var remaining = url;
@@ -45,8 +46,8 @@ pub const ClientOptions = struct {
                 const user = try options.arena.?.allocator().dupe(u8, credentials[0..splitIndex]);
                 const pass = try options.arena.?.allocator().dupe(u8, credentials[splitIndex + 1 ..]);
                 options.credentials = .{
-                    .user = decode(user),
-                    .pass = decode(pass),
+                    .username = decode(user),
+                    .password = decode(pass),
                 };
                 remaining = remaining[i + 1 ..];
             }
@@ -119,7 +120,7 @@ test "ClientOptions.fromConnectionString" {
     );
 
     try std.testing.expectEqualDeep(
-        Credentials{ .user = "user", .pass = "pass" },
+        Credentials{ .username = "user", .password = "pass" },
         options.credentials.?,
     );
 }

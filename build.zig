@@ -23,6 +23,8 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
+        // todo: how to parameterize this?
+        .filters = &.{"hello"},
     });
     unit_tests.root_module.addImport("bson", bson);
     const run_unit_tests = b.addRunArtifact(unit_tests);

@@ -1,5 +1,7 @@
 const std = @import("std");
 const Document = @import("bson").types.Document;
+const bson = @import("bson");
+const RawBson = @import("bson").types.RawBson;
 
 pub const SectionKind = enum(u8) {
     body = 0,
@@ -104,6 +106,30 @@ pub const Section = struct {
     payload: []const u8,
 };
 
+pub fn write(allocator: std.mem.Allocator, stream: std.net.Stream, command: RawBson) !void {
+    std.debug.print("\n -> writing command {any}\n\n", .{command});
+    // assume op_msg for now
+    var bsonBuf = std.ArrayList(u8).init(allocator);
+    defer bsonBuf.deinit();
+    var bsonWriter = bson.writer(allocator, bsonBuf.writer());
+    defer bsonWriter.deinit();
+    //std.debug.print("doc {any}", .{command});
+    try bsonWriter.write(command);
+    const bsonBytes = try bsonBuf.toOwnedSlice();
+    defer allocator.free(bsonBytes);
+    const requestBytes = try request(
+        allocator,
+        .{ .request_id = 1, .response_to = 0, .op_code = .msg },
+        0,
+        &.{
+            .{ .kind = .body, .payload = bsonBytes },
+        },
+    );
+    defer allocator.free(requestBytes);
+    try stream.writer().writeInt(i32, @intCast(requestBytes.len + @sizeOf(i32)), .little);
+    try stream.writer().writeAll(requestBytes);
+}
+
 /// caller owns freeing returned bytes
 pub fn request(allocator: std.mem.Allocator, header: Header, flags: u32, sections: []const Section) ![]u8 {
     var buf = std.ArrayList(u8).init(allocator);
@@ -120,4 +146,49 @@ pub fn request(allocator: std.mem.Allocator, header: Header, flags: u32, section
         try payload.writeAll(section.payload);
     }
     return try buf.toOwnedSlice();
+}
+
+// compare with https://github.com/mongodb/mongo-rust-driver/blob/b781af26dfb17fe62823a866a025de9fb102e0b3/src/cmap/conn/wire/message.rs#L182
+pub fn read(allocator: std.mem.Allocator, stream: std.net.Stream) !bson.Owned(RawBson) {
+    // read std header
+    // https://www.mongodb.com/docs/manual/reference/mongodb-wire-protocol/#standard-message-header
+    const msgLen = try stream.reader().readInt(i32, .little);
+    const responseBuf = try allocator.alloc(u8, @intCast(msgLen - @sizeOf(i32)));
+    //errdefer allocator.free(responseBuf);
+    defer allocator.free(responseBuf);
+    _ = try stream.reader().readAll(responseBuf);
+    var fbs = std.io.fixedBufferStream(responseBuf);
+    var responseReader = std.io.countingReader(fbs.reader());
+    _ = try responseReader.reader().readInt(i32, .little); // request id
+    _ = try responseReader.reader().readInt(i32, .little); // response to
+    const opCode = OpCode.fromInt(try responseReader.reader().readInt(i32, .little));
+
+    // opCode dependant payload
+    const OwnedBson = bson.Owned(RawBson);
+
+    var body: ?OwnedBson = null;
+    switch (opCode) {
+        // assume msg for now, handle others in the future
+        .msg => {
+            // https://www.mongodb.com/docs/manual/reference/mongodb-wire-protocol/#std-label-wire-op-msg
+            const flags = try responseReader.reader().readInt(u32, .little);
+            _ = flags; // autofix
+            //std.debug.print("response flags  {d}\n", .{flags});
+            // read sections until we hit a known limit
+            const msgLenPlusChecksum = @sizeOf(i32) * 2;
+            while (responseBuf.len - responseReader.bytes_read > msgLenPlusChecksum) {
+                switch (SectionKind.fromInt(try responseReader.reader().readInt(u8, .little))) {
+                    .body => {
+                        var bsonReader = bson.reader(allocator, responseReader.reader());
+                        body = try bsonReader.read();
+                    },
+                    // todo: support sequence
+                    else => |otherwise| std.debug.print("section {s} not yet supported", .{otherwise}),
+                }
+            }
+            // todo: read checksum if flags contains "checksum present"
+        },
+        else => |v| std.debug.print("op code {s} not yet supported", .{v}),
+    }
+    return if (body) |b| b else error.NoBody;
 }
