@@ -147,7 +147,7 @@ pub const Client = struct {
         const stream = try self.connection();
         defer stream.close();
 
-        const clientFirst: ?auth.Scram.ClientFirst = if (self.options.credentials) |creds| try (creds.mechansim orelse auth.Mechansim.@"SCRAM-SHA-256").speculativeAuthenticate(self.allocator, creds, "admin") else null;
+        const clientFirst = if (self.options.credentials) |creds| try (creds.mechansim orelse auth.Mechansim.@"SCRAM-SHA-256").speculativeAuthenticate(self.allocator, creds, "admin") else null;
 
         const saslSupportedMechs = if (self.options.credentials) |creds| try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ if (creds.mechansim) |m| m.defaultSource(null) else "admin", creds.username }) else null;
 
