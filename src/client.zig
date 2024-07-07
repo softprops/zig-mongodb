@@ -206,7 +206,14 @@ pub const Client = struct {
         var doc = try protocol.read(self.allocator, stream);
         defer doc.deinit();
 
-        std.debug.print("\nhello resp raw {any}\n\n", .{doc.value});
+        if (err.isErr(doc.value)) {
+            var reqErr = try err.extractErr(self.allocator, doc.value);
+            defer reqErr.deinit();
+            std.debug.print("error: {s}\n", .{reqErr.value.errmsg});
+            return error.InvalidRequest;
+        }
+
+        std.debug.print("\n\n<- hello resp raw {any}\n\n", .{doc.value});
 
         const helloResp = try doc.value.into(self.allocator, HelloResponse);
 
