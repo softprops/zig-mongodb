@@ -100,8 +100,6 @@ pub const Client = struct {
         self.options.deinit();
     }
 
-    // todo. return a wrapper type that adapts to both cleartext and tls streams via tls.Client
-    // caller owns calling stream.deinit()
     fn connection(self: *@This()) !Connection {
 
         // todo: impl connection pool
