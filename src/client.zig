@@ -106,10 +106,10 @@ pub const Client = struct {
         //std.posix.setsockopt(stream.handle, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
 
         // todo: impl connection pool
-        const plain = try std.net.tcpConnectToAddress(self.options.addresses[0].ipaddr);
-        // if tls
-        //return Stream.tls(plain, try std.crypto.tls.Client.init(plain, .{}, "???"));
-        return Stream.plain(plain);
+        const addr = self.options.addresses[0];
+        std.debug.print("connecting to {s}\n", .{addr.hostname});
+        const plain = try std.net.tcpConnectToAddress(addr.ipaddr);
+        return if (self.options.tls) Stream.tls(plain, try std.crypto.tls.Client.init(plain, .{}, addr.hostname)) else Stream.plain(plain);
     }
 
     pub fn authenticate(self: *@This()) !void {
@@ -201,7 +201,6 @@ pub const Client = struct {
         speculativeAuthenticate: ?bson.types.Document = null,
     };
 
-    // handshake?
     /// https://www.mongodb.com/docs/manual/reference/command/hello
     /// handshake https://github.com/mongodb/specifications/blob/master/source/auth/auth.md#authentication
     /// speculative auth https://github.com/mongodb/mongo/blob/master/src/mongo/db/auth/README.md#speculative-authentication
@@ -258,8 +257,6 @@ pub const Client = struct {
         }
 
         if (saslSupportedMechs) |sm| self.allocator.free(sm);
-
-        // todo optional CRC-32C checksum
 
         var doc = try protocol.read(self.allocator, stream);
         defer doc.deinit();
@@ -333,9 +330,10 @@ test "find" {
 
 // https://www.mongodb.com/docs/manual/reference/command/hello/#syntax
 test "hello" {
+    const connectionStr = "mongodb://demo:omed@localhost/test";
     var client = Client.init(
         std.testing.allocator,
-        try ClientOptions.fromConnectionString(std.testing.allocator, "mongodb://demo:omed@localhost/test"),
+        try ClientOptions.fromConnectionString(std.testing.allocator, connectionStr),
     );
     defer client.deinit();
     if (client.hello()) |resp| {

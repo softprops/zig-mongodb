@@ -27,6 +27,7 @@ pub const ClientOptions = struct {
     credentials: ?Credentials = null,
     options: ?std.StringHashMap([]const u8) = null,
     arena: ?std.heap.ArenaAllocator = null,
+    tls: bool = false,
 
     pub fn deinit(self: *@This()) void {
         if (self.arena) |ar| ar.deinit();
@@ -79,6 +80,7 @@ pub const ClientOptions = struct {
 
             // seed list - either from comma-delimited string or srv
             const seedList = if (srvFmt) srv: {
+                options.tls = true; // using srv format defaults tls to true
                 var resolver = doh.Client.init(options.arena.?.allocator(), .{});
                 defer resolver.deinit();
                 var resolved = try resolver.resolve(remaining, .{});
