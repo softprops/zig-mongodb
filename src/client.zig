@@ -57,7 +57,7 @@ pub const Stream = union(enum) {
     fn close(self: @This()) void {
         switch (self) {
             .plain => |s| s.close(),
-            .tls => {},
+            .tls => |s| s.plain.close(),
         }
     }
 
