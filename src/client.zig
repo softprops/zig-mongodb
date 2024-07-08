@@ -231,7 +231,7 @@ pub const Client = struct {
                 .{ "hello", RawBson.int32(1) },
                 .{ "$db", RawBson.string("admin") },
                 // only include if username is present but mechansim is not
-                .{ "saslSupportedMechs", if (saslSupportedMechs) |sm| RawBson.string(sm) else RawBson.null() }, // todo: derive this, db.username
+                .{ "saslSupportedMechs", if (saslSupportedMechs) |sm| RawBson.string(sm) else RawBson.null() },
                 .{
                     "client", RawBson.document(&.{
                         .{
