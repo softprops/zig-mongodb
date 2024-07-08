@@ -415,7 +415,6 @@ const Sasl = struct {
                 .{ "$db", RawBson.string(db) },
                 .{ "mechanism", RawBson.string(@tagName(mechanism)) },
                 .{ "payload", RawBson.binary(payload, .binary) },
-                .{ "autoAuthorize", RawBson.int32(1) },
                 // why does this cause a segfault?
                 // .{
                 //     "options", RawBson.document(
