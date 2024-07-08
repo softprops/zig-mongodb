@@ -97,19 +97,21 @@ pub const Client = struct {
     // todo. return a wrapper type that adapts to both cleartext and tls streams via tls.Client
     // caller owns calling stream.deinit()
     fn connection(self: *@This()) !Stream {
-        // todo: set client timeouts, i.e. xxxTimeoutMS, with something like the following
-        //const timeout = std.posix.timeval{
-        //    .tv_sec = @as(i32, n),
-        //    .tv_usec = @as(i32, 0),
-        //};
-        //
-        //std.posix.setsockopt(stream.handle, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
 
         // todo: impl connection pool
         const addr = self.options.addresses[0];
         std.debug.print("connecting to {s}\n", .{addr.hostname});
-        const plain = try std.net.tcpConnectToAddress(addr.ipaddr);
-        return if (self.options.tls) Stream.tls(plain, try std.crypto.tls.Client.init(plain, .{}, addr.hostname)) else Stream.plain(plain);
+        const underlying = try std.net.tcpConnectToAddress(addr.ipaddr);
+
+        // todo: set client timeouts, i.e. xxxTimeoutMS, with something like the following
+        const timeout = std.posix.timeval{
+            .tv_sec = @as(i32, 1),
+            .tv_usec = @as(i32, 0),
+        };
+
+        std.posix.setsockopt(underlying.handle, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
+
+        return if (self.options.tls) Stream.tls(underlying, try std.crypto.tls.Client.init(underlying, .{}, addr.hostname)) else Stream.plain(underlying);
     }
 
     pub fn authenticate(self: *@This()) !void {
