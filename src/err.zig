@@ -3,6 +3,7 @@ const bson = @import("bson");
 
 pub const Error = struct {
     errmsg: []const u8,
+    /// todo: enumify
     /// https://www.mongodb.com/docs/manual/reference/error-codes/
     code: i32,
     codeName: []const u8,
