@@ -25,13 +25,11 @@ pub const Credentials = struct {
     username: []const u8,
     password: []const u8,
     source: ?[]const u8 = null,
-    mechansim: ?Mechansim = null,
+    mechansim: ?Mechansim = .@"SCRAM-SHA-256",
     mechanism_properties: ?std.StringHashMap([]const u8) = null,
 
     pub fn authenticate(self: @This(), allocator: std.mem.Allocator, stream: Stream, speculativeAuth: ?FirstRound) !void {
-        if (self.mechansim) |mech| {
-            try mech.authenticate(allocator, self, stream, speculativeAuth);
-        }
+        try (self.mechansim orelse Mechansim.@"SCRAM-SHA-256").authenticate(allocator, self, stream, speculativeAuth);
     }
 };
 
@@ -85,7 +83,6 @@ pub const Mechansim = enum {
             // https://en.wikipedia.org/wiki/Salted_Challenge_Response_Authentication_Mechanism
             .@"SCRAM-SHA-1", .@"SCRAM-SHA-256" => {
                 const scram: Scram = if (self == .@"SCRAM-SHA-1") .sha1 else .sha256;
-
                 var clientFirst = speculativeAuth orelse blk: {
                     var cf = try Scram.ClientFirst.init(allocator, try Scram.generateNonce(allocator), credentials.username, self, db);
                     try protocol.write(allocator, stream, cf.sasl());

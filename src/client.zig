@@ -18,7 +18,7 @@ const OS_TYPE = RawBson.string(switch (@import("builtin").os.tag) {
 // https://github.com/mongodb/specifications/blob/master/source/mongodb-handshake/handshake.rst#client-driver-name
 const DRIVER = RawBson.document(
     &.{
-        .{ "name", RawBson.string("zig-bson") },
+        .{ "name", RawBson.string("zig-mongodb") },
         .{ "version", RawBson.string("0.1.0") },
     },
 );
