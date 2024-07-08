@@ -82,6 +82,12 @@ pub const Stream = union(enum) {
     }
 };
 
+pub const Connection = struct {
+    stream: Stream,
+    // does nothing now but will be release to a pool later
+    fn release(_: @This()) void {}
+};
+
 pub const Client = struct {
     allocator: std.mem.Allocator,
     options: ClientOptions,
@@ -96,7 +102,7 @@ pub const Client = struct {
 
     // todo. return a wrapper type that adapts to both cleartext and tls streams via tls.Client
     // caller owns calling stream.deinit()
-    fn connection(self: *@This()) !Stream {
+    fn connection(self: *@This()) !Connection {
 
         // todo: impl connection pool
         const addr = self.options.addresses[0];
@@ -111,32 +117,32 @@ pub const Client = struct {
 
         std.posix.setsockopt(underlying.handle, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
 
-        return if (self.options.tls) Stream.tls(underlying, try std.crypto.tls.Client.init(underlying, .{}, addr.hostname)) else Stream.plain(underlying);
+        return Connection{ .stream = if (self.options.tls) Stream.tls(underlying, try std.crypto.tls.Client.init(underlying, .{}, addr.hostname)) else Stream.plain(underlying) };
     }
 
     pub fn authenticate(self: *@This()) !void {
-        const stream = try self.connection();
-        //defer stream.close();
+        const conn = try self.connection();
+        defer conn.release();
 
         if (self.options.credentials) |creds| {
-            try creds.authenticate(self.allocator, stream, null);
+            try creds.authenticate(self.allocator, conn.stream, null);
         }
     }
 
     fn find(self: *@This()) !void {
-        const stream = try self.connection();
-        //defer stream.close();
+        const conn = try self.connection();
+        defer conn.release();
         if (self.options.credentials) |creds| {
-            try creds.authenticate(self.allocator, stream, null);
+            try creds.authenticate(self.allocator, conn.stream, null);
         }
-        try protocol.write(self.allocator, stream, bson.types.RawBson.document(
+        try protocol.write(self.allocator, conn.stream, bson.types.RawBson.document(
             &.{
                 .{ "find", bson.types.RawBson.string("system.users") },
                 .{ "$db", bson.types.RawBson.string("admin") },
             },
         ));
 
-        var doc = try protocol.read(self.allocator, stream);
+        var doc = try protocol.read(self.allocator, conn.stream);
         defer doc.deinit();
 
         if (err.isErr(doc.value)) {
@@ -218,8 +224,8 @@ pub const Client = struct {
             return error.DatabaseNotSelected;
         }
 
-        const stream = try self.connection();
-        // defer stream.close();
+        const conn = try self.connection();
+        defer conn.release();
 
         const clientFirst = if (self.options.credentials) |creds| try (creds.mechansim orelse auth.Mechansim.@"SCRAM-SHA-256").speculativeAuthenticate(self.allocator, creds, "admin") else null;
 
@@ -228,7 +234,7 @@ pub const Client = struct {
         // write request
         try protocol.write(
             self.allocator,
-            stream,
+            conn.stream,
             RawBson.document(&.{
                 .{ "hello", RawBson.int32(1) },
                 .{ "$db", RawBson.string("admin") },
@@ -267,7 +273,7 @@ pub const Client = struct {
 
         if (saslSupportedMechs) |sm| self.allocator.free(sm);
 
-        var doc = try protocol.read(self.allocator, stream);
+        var doc = try protocol.read(self.allocator, conn.stream);
         defer doc.deinit();
 
         if (err.isErr(doc.value)) {
@@ -284,7 +290,7 @@ pub const Client = struct {
         if (self.options.credentials) |creds| {
             std.debug.print("speculativeAuthenticate response {?any}", .{helloResp.value.speculativeAuthenticate});
             // todo: include hello responses' speculative auth here to continue/complete auth conversation
-            try creds.authenticate(self.allocator, stream, null);
+            try creds.authenticate(self.allocator, conn.stream, null);
         }
 
         return helloResp;
