@@ -218,6 +218,11 @@ pub const Client = struct {
     /// handshake https://github.com/mongodb/specifications/blob/master/source/auth/auth.md#authentication
     /// speculative auth https://github.com/mongodb/mongo/blob/master/src/mongo/db/auth/README.md#speculative-authentication
     pub fn hello(self: *@This()) !bson.Owned(HelloResponse) {
+
+        // compare with
+        // java impl - https://github.com/mongodb/mongo-java-driver/blob/d8503c31a29b446ba21dfa2ded8cd38f298e3165/driver-core/src/main/com/mongodb/internal/connection/InternalStreamConnectionInitializer.java#L92
+        // rust impl - https://github.com/mongodb/mongo-rust-driver/blob/b781af26dfb17fe62823a866a025de9fb102e0b3/src/cmap/establish/handshake.rs#L435
+
         if (self.options.database == null) {
             return error.DatabaseNotSelected;
         }
