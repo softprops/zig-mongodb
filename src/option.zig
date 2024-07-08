@@ -8,6 +8,7 @@ const DEFAULT_PORT: u16 = 27017;
 pub const Addr = struct {
     hostname: []const u8,
     ipaddr: std.net.Address,
+    // todo: include ttl to refresh ipaddr
     fn init(hostname: []const u8, ipaddr: std.net.Address) @This() {
         return .{ .hostname = hostname, .ipaddr = ipaddr };
     }
@@ -37,6 +38,7 @@ pub const ClientOptions = struct {
         return std.Uri.percentDecodeInPlace(val);
     }
 
+    // todo: review https://www.mongodb.com/docs/manual/reference/connection-string/#connection-options for options and expected defaults
     // https://www.mongodb.com/docs/manual/reference/connection-string/#std-label-connections-standard-connection-string-format
     // https://github.com/mongodb/specifications/blob/master/source/connection-string/connection-string-spec.md#general-syntax
     // https://www.mongodb.com/docs/manual/reference/connection-string/#std-label-connections-dns-seedlist
@@ -80,9 +82,12 @@ pub const ClientOptions = struct {
 
             // seed list - either from comma-delimited string or srv
             const seedList = if (srvFmt) srv: {
+                // https://github.com/mongodb/specifications/blob/master/source/initial-dns-seedlist-discovery/initial-dns-seedlist-discovery.md#connection-string-format
                 options.tls = true; // using srv format defaults tls to true
                 var resolver = doh.Client.init(options.arena.?.allocator(), .{});
                 defer resolver.deinit();
+
+                // should we make one request for both srv and txt or two requests, one prefixing host with _mongodb._tcp. and one without specifically requesting txt?
                 var resolved = try resolver.resolve(remaining, .{});
                 defer resolved.deinit();
                 var addrBuf = try std.ArrayList(Addr).initCapacity(
@@ -91,6 +96,7 @@ pub const ClientOptions = struct {
                 );
                 defer addrBuf.deinit();
                 for (resolved.value.Answer) |ans| {
+                    std.debug.print("type {any} name {s} data {s}\n", .{ ans.recordType(), ans.name, ans.data });
                     switch (ans.recordType()) {
                         .TXT => {
                             var opts = std.mem.split(u8, ans.data, "&");
@@ -120,7 +126,7 @@ pub const ClientOptions = struct {
 
                             addrBuf.appendAssumeCapacity(addr);
                         },
-                        else => {},
+                        else => std.debug.print("ignoring record type {any} name {s} data {s}", .{ ans.recordType(), ans.name, ans.data }),
                     }
                 }
 
