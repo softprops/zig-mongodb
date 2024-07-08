@@ -236,6 +236,8 @@ pub const Client = struct {
             RawBson.document(&.{
                 .{ "hello", RawBson.int32(1) },
                 .{ "$db", RawBson.string("admin") },
+                // .{ "loadBalanced", RawBson.boolean(true) }, // todo: set to true if connectionMode is loadBalanced
+                // .{ "compression", RawBson.array(...) }, // todo: set if compressors is configured
                 // only include if username is present but mechansim is not
                 .{ "saslSupportedMechs", if (saslSupportedMechs) |sm| RawBson.string(sm) else RawBson.null() },
                 .{
