@@ -127,7 +127,7 @@ pub const Client = struct {
         }
     }
 
-    fn find(self: *@This()) !void {
+    fn find(self: *@This()) !bson.Owned(RawBson) {
         const conn = try self.connection();
         defer conn.release();
         if (self.options.credentials) |creds| {
@@ -141,16 +141,16 @@ pub const Client = struct {
         ));
 
         var doc = try protocol.read(self.allocator, conn.stream);
-        defer doc.deinit();
+        errdefer doc.deinit();
 
         if (err.isErr(doc.value)) {
             var reqErr = try err.extractErr(self.allocator, doc.value);
             defer reqErr.deinit();
             std.debug.print("error {s}", .{reqErr.value.errmsg});
-            return;
+            return error.InvalidRequest;
         }
 
-        std.debug.print("find resp {any}", .{doc.value});
+        return doc;
     }
 
     /// todo move to its own module
@@ -283,7 +283,8 @@ pub const Client = struct {
 
         std.debug.print("<- hello resp raw {any}\n\n", .{doc.value});
 
-        const helloResp = try doc.value.into(self.allocator, HelloResponse);
+        var helloResp = try doc.value.into(self.allocator, HelloResponse);
+        errdefer helloResp.deinit();
 
         if (self.options.credentials) |creds| {
             std.debug.print("speculativeAuthenticate response {?any}", .{helloResp.value.speculativeAuthenticate});
@@ -330,7 +331,10 @@ test "find" {
         },
     );
     defer client.deinit();
-    client.find() catch |e| {
+    if (client.find()) |doc| {
+        var vdoc = doc;
+        vdoc.deinit();
+    } else |e| {
         switch (e) {
             error.ConnectionRefused => {
                 std.debug.print("mongodb not running {any}\n", .{e});
@@ -338,7 +342,7 @@ test "find" {
             else => return e,
         }
         // catch errors until we set up a proper integration testing bootstrap on host
-    };
+    }
 }
 
 // https://www.mongodb.com/docs/manual/reference/command/hello/#syntax
