@@ -91,6 +91,7 @@ pub const Connection = struct {
 pub const Client = struct {
     allocator: std.mem.Allocator,
     options: ClientOptions,
+    conn: ?Connection = null,
 
     pub fn init(allocator: std.mem.Allocator, options: ClientOptions) @This() {
         return .{ .allocator = allocator, .options = options };
@@ -98,24 +99,27 @@ pub const Client = struct {
 
     pub fn deinit(self: *@This()) void {
         self.options.deinit();
+        if (self.conn) |c| c.stream.close();
     }
 
     fn connection(self: *@This()) !Connection {
+        return self.conn orelse blk: {
+            // todo: impl connection pool
+            const addr = self.options.addresses[0];
+            std.debug.print("connecting to {s}\n", .{addr.hostname});
+            const underlying = try std.net.tcpConnectToAddress(addr.ipaddr);
 
-        // todo: impl connection pool
-        const addr = self.options.addresses[0];
-        std.debug.print("connecting to {s}\n", .{addr.hostname});
-        const underlying = try std.net.tcpConnectToAddress(addr.ipaddr);
+            // todo: set client timeouts, i.e. xxxTimeoutMS, with something like the following
+            const timeout = std.posix.timeval{
+                .tv_sec = @as(i32, 1),
+                .tv_usec = @as(i32, 0),
+            };
 
-        // todo: set client timeouts, i.e. xxxTimeoutMS, with something like the following
-        const timeout = std.posix.timeval{
-            .tv_sec = @as(i32, 1),
-            .tv_usec = @as(i32, 0),
+            std.posix.setsockopt(underlying.handle, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
+            const conn = Connection{ .stream = if (self.options.tls) Stream.tls(underlying, try std.crypto.tls.Client.init(underlying, .{}, addr.hostname)) else Stream.plain(underlying) };
+            self.conn = conn;
+            break :blk conn;
         };
-
-        std.posix.setsockopt(underlying.handle, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
-
-        return Connection{ .stream = if (self.options.tls) Stream.tls(underlying, try std.crypto.tls.Client.init(underlying, .{}, addr.hostname)) else Stream.plain(underlying) };
     }
 
     pub fn authenticate(self: *@This()) !void {
