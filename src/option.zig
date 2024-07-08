@@ -5,16 +5,24 @@ const doh = @import("doh");
 
 const DEFAULT_PORT: u16 = 27017;
 
+pub const Addr = struct {
+    hostname: []const u8,
+    ipaddr: std.net.Address,
+    fn init(hostname: []const u8, ipaddr: std.net.Address) @This() {
+        return .{ .hostname = hostname, .ipaddr = ipaddr };
+    }
+};
+
 // https://www.mongodb.com/docs/drivers/rust/current/fundamentals/connections/connection-guide/
 pub const ClientOptions = struct {
     database: ?[]const u8 = null,
-    addresses: []const std.net.Address = &.{
-        .{
+    addresses: []const Addr = &.{
+        Addr.init("localhost", .{
             .in = std.net.Ip4Address.init(
                 .{ 127, 0, 0, 1 },
                 DEFAULT_PORT,
             ),
-        },
+        }),
     },
     credentials: ?Credentials = null,
     options: ?std.StringHashMap([]const u8) = null,
@@ -75,7 +83,7 @@ pub const ClientOptions = struct {
                 defer resolver.deinit();
                 var resolved = try resolver.resolve(remaining, .{});
                 defer resolved.deinit();
-                var addrBuf = try std.ArrayList(std.net.Address).initCapacity(
+                var addrBuf = try std.ArrayList(Addr).initCapacity(
                     options.arena.?.allocator(),
                     resolved.value.Answer.len,
                 );
@@ -98,7 +106,7 @@ pub const ClientOptions = struct {
                             _ = components.next();
                             const port = if (components.next()) |p| try std.fmt.parseInt(u16, p, 10) else DEFAULT_PORT;
                             const host = components.next().?;
-                            const addr = std.net.Address.resolveIp(host, port) catch blk: {
+                            const addr = Addr.init(host, std.net.Address.resolveIp(host, port) catch blk: {
                                 var addrs = try std.net.getAddressList(
                                     options.arena.?.allocator(),
                                     host,
@@ -106,7 +114,7 @@ pub const ClientOptions = struct {
                                 );
                                 defer addrs.deinit();
                                 break :blk if (addrs.addrs.len > 1) addrs.addrs[1] else addrs.addrs[0];
-                            };
+                            });
 
                             addrBuf.appendAssumeCapacity(addr);
                         },
@@ -117,7 +125,7 @@ pub const ClientOptions = struct {
                 break :srv try addrBuf.toOwnedSlice();
             } else std: {
                 const hostCount = std.mem.count(u8, remaining, ",");
-                var addrBuf = try std.ArrayList(std.net.Address).initCapacity(
+                var addrBuf = try std.ArrayList(Addr).initCapacity(
                     options.arena.?.allocator(),
                     hostCount + 1,
                 );
@@ -130,7 +138,7 @@ pub const ClientOptions = struct {
                     var components = mem.split(u8, hostStr, ":");
                     const host = components.next().?;
                     const port = if (components.next()) |p| try std.fmt.parseInt(u16, p, 10) else DEFAULT_PORT;
-                    const addr = std.net.Address.resolveIp(host, port) catch blk: {
+                    const addr = Addr.init(host, std.net.Address.resolveIp(host, port) catch blk: {
                         var addrs = try std.net.getAddressList(
                             options.arena.?.allocator(),
                             host,
@@ -138,7 +146,7 @@ pub const ClientOptions = struct {
                         );
                         defer addrs.deinit();
                         break :blk addrs.addrs[1];
-                    };
+                    });
 
                     addrBuf.appendAssumeCapacity(addr);
                 }

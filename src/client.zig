@@ -106,7 +106,7 @@ pub const Client = struct {
         //std.posix.setsockopt(stream.handle, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
 
         // todo: impl connection pool
-        const plain = try std.net.tcpConnectToAddress(self.options.addresses[0]);
+        const plain = try std.net.tcpConnectToAddress(self.options.addresses[0].ipaddr);
         // if tls
         //return Stream.tls(plain, try std.crypto.tls.Client.init(plain, .{}, "???"));
         return Stream.plain(plain);
@@ -127,12 +127,6 @@ pub const Client = struct {
         if (self.options.credentials) |creds| {
             try creds.authenticate(self.allocator, stream, null);
         }
-        try protocol.write(self.allocator, stream, bson.types.RawBson.document(
-            &.{
-                .{ "find", bson.types.RawBson.string("system.users") },
-                .{ "$db", bson.types.RawBson.string("admin") },
-            },
-        ));
         var doc = try protocol.read(self.allocator, stream);
         defer doc.deinit();
 
@@ -286,15 +280,6 @@ pub const Client = struct {
             // todo: include hello responses' speculative auth here to continue/complete auth conversation
             try creds.authenticate(self.allocator, stream, null);
         }
-
-        // write
-        try protocol.write(self.allocator, stream, RawBson.document(&.{
-            .{ "find", RawBson.string("system.users") },
-            .{ "$db", RawBson.string("admin") },
-        }));
-        var findDoc = try protocol.read(self.allocator, stream);
-        defer findDoc.deinit();
-        std.debug.print("findDoc {any}", .{findDoc.value});
 
         return helloResp;
     }
