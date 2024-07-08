@@ -114,7 +114,7 @@ pub const Client = struct {
 
     pub fn authenticate(self: *@This()) !void {
         const stream = try self.connection();
-        defer stream.close();
+        //defer stream.close();
 
         if (self.options.credentials) |creds| {
             try creds.authenticate(self.allocator, stream, null);
@@ -123,10 +123,17 @@ pub const Client = struct {
 
     fn find(self: *@This()) !void {
         const stream = try self.connection();
-        defer stream.close();
+        //defer stream.close();
         if (self.options.credentials) |creds| {
             try creds.authenticate(self.allocator, stream, null);
         }
+        try protocol.write(self.allocator, stream, bson.types.RawBson.document(
+            &.{
+                .{ "find", bson.types.RawBson.string("system.users") },
+                .{ "$db", bson.types.RawBson.string("admin") },
+            },
+        ));
+
         var doc = try protocol.read(self.allocator, stream);
         defer doc.deinit();
 

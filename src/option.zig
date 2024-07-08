@@ -174,7 +174,7 @@ test "ClientOptions.fromConnectionString" {
 
     try std.testing.expectEqualDeep(
         (try std.net.Address.parseIp("127.0.0.1", 27017)).in,
-        options.addresses[0].in,
+        options.addresses[0].ipaddr.in,
     );
 
     try std.testing.expectEqualDeep(
