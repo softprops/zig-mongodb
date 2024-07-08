@@ -415,14 +415,13 @@ const Sasl = struct {
                 .{ "$db", RawBson.string(db) },
                 .{ "mechanism", RawBson.string(@tagName(mechanism)) },
                 .{ "payload", RawBson.binary(payload, .binary) },
-                // why does this cause a segfault?
-                // .{
-                //     "options", RawBson.document(
-                //         &.{
-                //             .{ "skipEmptyExchange", RawBson.boolean(true) },
-                //         },
-                //     ),
-                // },
+                .{
+                    "options", RawBson.document(
+                        &.{
+                            .{ "skipEmptyExchange", RawBson.boolean(true) },
+                        },
+                    ),
+                },
             },
         );
     }
