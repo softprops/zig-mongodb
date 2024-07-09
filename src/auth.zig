@@ -244,7 +244,7 @@ pub const Scram = enum {
 
             const client_sig = mac(Hash, auth_msg, &stored_key);
 
-            const xorBytes = try xor( std.crypto.auth.hmac.Hmac(Hash).mac_length, client_key, client_sig);
+            const xorBytes = try xor(std.crypto.auth.hmac.Hmac(Hash).mac_length, client_key, client_sig);
 
             const client_proof = try base64Encode(allocator, &xorBytes);
             defer allocator.free(client_proof);
