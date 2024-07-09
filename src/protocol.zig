@@ -109,7 +109,7 @@ pub const Section = struct {
 
 pub fn write(allocator: std.mem.Allocator, stream: Stream, command: RawBson) !void {
     var writer = stream.writer();
-    std.debug.print("\n -> writing command {any}\n\n", .{command});
+    std.debug.print("\n\n-> send {any}\n", .{command});
     // assume op_msg for now
     var bsonBuf = std.ArrayList(u8).init(allocator);
     defer bsonBuf.deinit();
@@ -196,5 +196,7 @@ pub fn read(allocator: std.mem.Allocator, stream: Stream) !bson.Owned(RawBson) {
         },
         else => |v| std.debug.print("op code {s} not yet supported", .{v}),
     }
+    if (body) |b| std.debug.print("\n<- recv {?any}\n", .{b.value});
+
     return if (body) |b| b else error.NoBody;
 }

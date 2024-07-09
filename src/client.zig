@@ -292,18 +292,16 @@ pub const Client = struct {
             return error.InvalidRequest;
         }
 
-        std.debug.print("<- hello resp raw {any}\n\n", .{doc.value});
-
-        var helloResp = try doc.value.into(self.allocator, HelloResponse);
-        errdefer helloResp.deinit();
+        var resp = try doc.value.into(self.allocator, HelloResponse);
+        errdefer resp.deinit();
 
         if (self.options.credentials) |creds| {
-            std.debug.print("speculativeAuthenticate response {?any}", .{helloResp.value.speculativeAuthenticate});
+            std.debug.print("speculativeAuthenticate response: {?any}", .{resp.value.speculativeAuthenticate});
             // todo: include hello responses' speculative auth here to continue/complete auth conversation
             try creds.authenticate(self.allocator, conn.stream, null);
         }
 
-        return helloResp;
+        return resp;
     }
 };
 
