@@ -5,24 +5,22 @@ pub fn build(b: *std.Build) !void {
 
     const optimize = b.standardOptimizeOption(.{});
 
-    const bson = b.dependency("bson", .{
-        .target = target,
-        .optimize = optimize,
-    }).module("bson");
-    const doh = b.dependency("doh", .{
-        .target = target,
-        .optimize = optimize,
-    }).module("doh");
+    const depNames = [_][]const u8{ "bson", "doh" };
+    var imports: [depNames.len]std.Build.Module.Import = undefined;
+    for (depNames, 0..) |name, i| {
+        imports[i] = .{
+            .name = name,
+            .module = b.dependency(
+                name,
+                .{ .target = target, .optimize = optimize },
+            ).module(name),
+        };
+    }
 
-    const mongodb = b.createModule(.{
+    const mongodb = b.addModule("mongodb", .{
         .root_source_file = b.path("src/root.zig"),
-        .imports = &.{
-            .{ .name = "bson", .module = bson },
-            .{ .name = "doh", .module = doh },
-        },
+        .imports = &imports,
     });
-
-    try b.modules.put(b.dupe("mongodb"), mongodb);
 
     // unit tests
     const unit_tests = b.addTest(.{
@@ -31,8 +29,8 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
         .filters = if (b.args) |args| args else &.{},
     });
-    unit_tests.root_module.addImport("bson", bson);
-    unit_tests.root_module.addImport("doh", doh);
+    for (imports) |imp| unit_tests.root_module.addImport(imp.name, imp.module);
+
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
