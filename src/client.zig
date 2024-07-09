@@ -5,6 +5,7 @@ const bson = @import("bson");
 const RawBson = bson.types.RawBson;
 const auth = @import("auth.zig");
 const err = @import("err.zig");
+const Owned = @import("root.zig").Owned;
 
 // https://github.com/mongodb/specifications/blob/master/source/mongodb-handshake/handshake.rst#client-os-type
 const OS_TYPE = RawBson.string(switch (@import("builtin").os.tag) {
@@ -137,7 +138,8 @@ pub const Client = struct {
             return self.ok != 0.0;
         }
     };
-    fn ping(self: *@This()) !bson.Owned(PingResponse) {
+
+    fn ping(self: *@This()) !Owned(PingResponse) {
         const conn = try self.connection();
         defer conn.release();
 
@@ -164,7 +166,7 @@ pub const Client = struct {
     // https://www.mongodb.com/docs/manual/reference/command/find/#mongodb-dbcommand-dbcmd.find
     // todo: return a Cursor type with a `.next()`-based iterator
     // see also https://www.mongodb.com/docs/manual/reference/command/getMore/#mongodb-dbcommand-dbcmd.getMore
-    fn find(self: *@This()) !bson.Owned(RawBson) {
+    fn find(self: *@This()) !Owned(RawBson) {
         const conn = try self.connection();
         defer conn.release();
         if (self.options.credentials) |creds| {
@@ -254,7 +256,7 @@ pub const Client = struct {
     /// https://www.mongodb.com/docs/manual/reference/command/hello
     /// handshake https://github.com/mongodb/specifications/blob/master/source/auth/auth.md#authentication
     /// speculative auth https://github.com/mongodb/mongo/blob/master/src/mongo/db/auth/README.md#speculative-authentication
-    pub fn hello(self: *@This()) !bson.Owned(HelloResponse) {
+    pub fn hello(self: *@This()) !Owned(HelloResponse) {
 
         // compare with
         // java impl - https://github.com/mongodb/mongo-java-driver/blob/d8503c31a29b446ba21dfa2ded8cd38f298e3165/driver-core/src/main/com/mongodb/internal/connection/InternalStreamConnectionInitializer.java#L92
