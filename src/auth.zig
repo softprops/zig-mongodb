@@ -233,11 +233,9 @@ pub const Scram = enum {
             var client_key = mac(Hash, "Client Key", saltedPass);
             var stored_key = hash(Hash, &client_key);
 
-            const header = try base64Encode(allocator, clientFirst.header());
-            defer allocator.free(header);
-
             // https://en.wikipedia.org/wiki/Salted_Challenge_Response_Authentication_Mechanism#Proofs
-            const without_proof = try std.fmt.allocPrint(allocator, "c={s},r={s}", .{ header, serverFirst.nonce });
+            // note 'biws' is the base64 encoding of clientFirst.header() which is aways n,, and hence will aways base64 to 'biws'
+            const without_proof = try std.fmt.allocPrint(allocator, "c=biws,r={s}", .{ serverFirst.nonce });
             defer allocator.free(without_proof);
 
             const auth_msg = try std.fmt.allocPrint(allocator, "{s},{s},{s}", .{ clientFirst.bare(), serverFirst.saslResp.payload, without_proof });
