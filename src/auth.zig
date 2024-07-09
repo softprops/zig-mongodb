@@ -242,12 +242,11 @@ pub const Scram = enum {
 
             const auth_msg = try std.fmt.allocPrint(allocator, "{s},{s},{s}", .{ clientFirst.bare(), serverFirst.saslResp.payload, without_proof });
 
-            var client_sig = mac(Hash, auth_msg, &stored_key);
+            const client_sig = mac(Hash, auth_msg, &stored_key);
 
-            const xorBytes = try xor(allocator, &client_key, &client_sig);
-            defer allocator.free(xorBytes);
+            const xorBytes = try xor( std.crypto.auth.hmac.Hmac(Hash).mac_length, client_key, client_sig);
 
-            const client_proof = try base64Encode(allocator, xorBytes);
+            const client_proof = try base64Encode(allocator, &xorBytes);
             defer allocator.free(client_proof);
 
             const msg = try std.fmt.allocPrint(allocator, "{s},p={s}", .{ without_proof, client_proof });
@@ -370,8 +369,8 @@ pub const Scram = enum {
     }
 
     // caller owns freeing returned bytes, we assume that l and r have the same len
-    fn xor(allocator: std.mem.Allocator, l: []const u8, r: []const u8) ![]u8 {
-        const dest = try allocator.alloc(u8, l.len);
+    fn xor(comptime len: usize, l: [len]u8, r: [len]u8) ![len]u8 {
+        var dest: [len]u8 = undefined;
         for (dest, 0..) |_, i| {
             dest[i] = l[i] ^ r[i];
         }
