@@ -131,6 +131,39 @@ pub const Client = struct {
         }
     }
 
+    pub const PingResponse = struct {
+        ok: f64,
+        fn isErr(self: @This()) bool {
+            return self.ok != 0.0;
+        }
+    };
+    fn ping(self: *@This()) !bson.Owned(PingResponse) {
+        const conn = try self.connection();
+        defer conn.release();
+
+        try protocol.write(self.allocator, conn.stream, bson.types.RawBson.document(
+            &.{
+                .{ "ping", bson.types.RawBson.int32(1) },
+                .{ "$db", bson.types.RawBson.string("admin") },
+            },
+        ));
+
+        var doc = try protocol.read(self.allocator, conn.stream);
+        defer doc.deinit();
+
+        if (err.isErr(doc.value)) {
+            var reqErr = try err.extractErr(self.allocator, doc.value);
+            defer reqErr.deinit();
+            std.debug.print("error: {s}\n", .{reqErr.value.errmsg});
+            return error.InvalidRequest;
+        }
+
+        return try doc.value.into(self.allocator, PingResponse);
+    }
+
+    // https://www.mongodb.com/docs/manual/reference/command/find/#mongodb-dbcommand-dbcmd.find
+    // todo: return a Cursor type with a `.next()`-based iterator
+    // see also https://www.mongodb.com/docs/manual/reference/command/getMore/#mongodb-dbcommand-dbcmd.getMore
     fn find(self: *@This()) !bson.Owned(RawBson) {
         const conn = try self.connection();
         defer conn.release();
@@ -296,7 +329,7 @@ pub const Client = struct {
         errdefer resp.deinit();
 
         if (self.options.credentials) |creds| {
-            std.debug.print("speculativeAuthenticate response: {?any}", .{resp.value.speculativeAuthenticate});
+            std.debug.print("\nspeculativeAuthenticate response {?any}\n", .{resp.value.speculativeAuthenticate});
             // todo: include hello responses' speculative auth here to continue/complete auth conversation
             try creds.authenticate(self.allocator, conn.stream, null);
         }
@@ -326,6 +359,27 @@ test "authenticate" {
         }
         // catch errors until we set up a proper integration testing bootstrap on host
     };
+}
+
+test "ping" {
+    const connectionStr = "mongodb://demo:omed@localhost/test";
+    var client = Client.init(
+        std.testing.allocator,
+        try ClientOptions.fromConnectionString(std.testing.allocator, connectionStr),
+    );
+    defer client.deinit();
+    if (client.ping()) |resp| {
+        var vresp = resp;
+        vresp.deinit();
+    } else |e| {
+        switch (e) {
+            error.ConnectionRefused => {
+                std.debug.print("mongodb not running {any}\n", .{e});
+            },
+            else => return e,
+        }
+        // catch errors until we set up a proper integration testing bootstrap on host
+    }
 }
 
 test "find" {
