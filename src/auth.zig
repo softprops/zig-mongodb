@@ -3,15 +3,16 @@ const RawBson = @import("bson").types.RawBson;
 const bson = @import("bson");
 const protocol = @import("protocol.zig");
 const err = @import("err.zig");
-const Stream = @import("client.zig").Stream;
+pub const Stream = @import("client.zig").Stream;
+pub const Owned = @import("client.zig").Owned;
 
 /// captures the first round of saml auth either initiated proactively as part of a connection
 /// handshake or a request to authenticate via auth mechansim
 pub const FirstRound = struct {
     request: Scram.ClientFirst,
-    response: bson.Owned(RawBson),
+    response: Owned(RawBson),
 
-    fn init(request: Scram.ClientFirst, response: bson.Owned(RawBson)) @This() {
+    fn init(request: Scram.ClientFirst, response: Owned(RawBson)) @This() {
         return .{ .request = request, .response = response };
     }
 
@@ -235,7 +236,7 @@ pub const Scram = enum {
 
             // https://en.wikipedia.org/wiki/Salted_Challenge_Response_Authentication_Mechanism#Proofs
             // note 'biws' is the base64 encoding of clientFirst.header() which is aways n,, and hence will aways base64 to 'biws'
-            const without_proof = try std.fmt.allocPrint(allocator, "c=biws,r={s}", .{ serverFirst.nonce });
+            const without_proof = try std.fmt.allocPrint(allocator, "c=biws,r={s}", .{serverFirst.nonce});
             defer allocator.free(without_proof);
 
             const auth_msg = try std.fmt.allocPrint(allocator, "{s},{s},{s}", .{ clientFirst.bare(), serverFirst.saslResp.payload, without_proof });

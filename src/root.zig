@@ -1,5 +1,6 @@
 // todo: https://github.com/mongodb/specifications/tree/master/source
 // todo: https://www.mongodb.com/docs/manual/reference/mongodb-wire-protocol/
+// see also https://github.com/mongodb/specifications/blob/master/source/driver-mantras.md#driver-mantras
 const std = @import("std");
 const mem = std.mem;
 

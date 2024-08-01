@@ -2,7 +2,7 @@ const std = @import("std");
 const Document = @import("bson").types.Document;
 const bson = @import("bson");
 const RawBson = @import("bson").types.RawBson;
-const Stream = @import("client.zig").Stream;
+const Stream = @import("stream.zig").Stream;
 
 pub const SectionKind = enum(u8) {
     body = 0,

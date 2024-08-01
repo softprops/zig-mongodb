@@ -5,7 +5,8 @@ const bson = @import("bson");
 const RawBson = bson.types.RawBson;
 const auth = @import("auth.zig");
 const err = @import("err.zig");
-const Owned = @import("root.zig").Owned;
+pub const Owned = @import("root.zig").Owned;
+pub const Stream = @import("stream.zig").Stream;
 
 // https://github.com/mongodb/specifications/blob/master/source/mongodb-handshake/handshake.rst#client-os-type
 const OS_TYPE = RawBson.string(switch (@import("builtin").os.tag) {
@@ -24,70 +25,161 @@ const DRIVER = RawBson.document(
     },
 );
 
-// provides reader/writer impl over both plain and tls streams
-pub const Stream = union(enum) {
-    const Tls = struct {
-        plain: std.net.Stream,
-        tls: std.crypto.tls.Client,
-    };
-    plain: std.net.Stream,
-    tls: Tls,
-
-    pub const ReadError = anyerror; // std.posix.ReadError;
-    pub const WriteError = anyerror; //std.posix.WriteError;
-
-    pub const Reader = std.io.Reader(Stream, ReadError, read);
-    pub const Writer = std.io.Writer(Stream, WriteError, write);
-
-    fn tls(stream: std.net.Stream, c: std.crypto.tls.Client) @This() {
-        return .{ .tls = .{ .plain = stream, .tls = c } };
-    }
-
-    fn plain(stream: std.net.Stream) @This() {
-        return .{ .plain = stream };
-    }
-
-    pub fn reader(self: @This()) Reader {
-        return .{ .context = self };
-    }
-
-    pub fn writer(self: @This()) Writer {
-        return .{ .context = self };
-    }
-
-    fn close(self: @This()) void {
-        switch (self) {
-            .plain => |s| s.close(),
-            .tls => |s| s.plain.close(),
-        }
-    }
-
-    pub fn read(self: Stream, buffer: []u8) ReadError!usize {
-        return switch (self) {
-            .plain => |s| s.read(buffer),
-            .tls => |s| blk: {
-                var vs = s;
-                break :blk vs.tls.read(s.plain, buffer);
-            },
-        };
-    }
-
-    pub fn write(self: Stream, buffer: []const u8) WriteError!usize {
-        return switch (self) {
-            .plain => |s| s.write(buffer),
-            .tls => |s| blk: {
-                var vs = s;
-                break :blk vs.tls.write(s.plain, buffer);
-            },
-        };
-    }
-};
-
 pub const Connection = struct {
     stream: Stream,
     // does nothing now but will be release to a pool later
     fn release(_: @This()) void {}
 };
+
+pub const DB = struct {
+    name: []const u8,
+    client: Client,
+
+    /// return an interface exposing operations on mongodb collections
+    fn collection(self: DB, name: []const u8) Collection {
+        return .{ .db = self, .name = name };
+    }
+};
+
+/// A Collection is an interface for interacting with a named mongodb collection of documents
+pub const Collection = struct {
+    name: []const u8,
+    db: DB,
+
+    pub const FindFilter = union(enum) {
+        const Match = struct { []const u8, RawBson };
+        const Eq = struct { []const u8, RawBson };
+        const Regex = struct { []const u8, []const u8 };
+        match: Match, // .{ .match = .{ "foo", 1 } }
+        eq: Eq, // .{ .eq = .{"foo", 1} }
+        regex: Regex, // .{ .regex = .{ "foo", "pattern" } }
+        //gt: // .{ .gt => .{"foo", 1} }
+        //gte: // .{ .gte => .{"foo", 1} }
+        //lt: // .{ .lt => .{"foo", 1} }
+        //lte: // .{ .lte => .{"foo", 1} }
+        //lte: // .{ .lte => .{"foo", 1} }
+        //in: // .{ .in => &[_]{ 1, 2, 3 } }
+        //nin: // .{ .nin => &[_]{ 1, 2, 3 }} }
+
+        fn toBson(self: @This()) RawBson {
+            std.debug.print("toBson {any}\n", .{self});
+            return switch (self) {
+                // eq should be preferred. see https://www.mongodb.com/docs/manual/reference/operator/query/eq/#security-implications
+                .match => |v| RawBson.document(&.{v}),
+                .eq => |v| RawBson.document(&.{.{ v.@"0", RawBson.document(&.{.{ "$eq", RawBson.string("test") }}) }}), // eq is functionally equiv to a direct match but inherently more secure
+                .regex => |v| RawBson.document(&.{.{ v.@"0", RawBson.document(&.{.{ "$regex", RawBson.string(v.@"1") }}) }}),
+            };
+        }
+    };
+
+    pub const FindOptions = struct {
+        sort: ?RawBson = null,
+        projection: ?RawBson = null,
+        hint: ?RawBson = null,
+        skip: ?i32 = null,
+        limit: ?i32 = null,
+        batchSize: ?i32 = null,
+        singleBatch: ?bool = null,
+        comment: ?RawBson = null,
+        maxTimeMS: ?i32 = null,
+        readConcern: ?RawBson = null,
+        max: ?RawBson = null,
+        min: ?RawBson = null,
+        returnKey: ?bool = null,
+        showRecordId: ?bool = null,
+        tailable: ?bool = null,
+        oplogReplay: ?bool = null,
+        noCursorTimeout: ?bool = null,
+        awaitData: ?bool = null,
+        allowPartialResults: ?bool = null,
+        collation: ?RawBson = null,
+        allowDiskUse: ?bool = null,
+        let: ?RawBson = null,
+    };
+
+    pub fn FindResponse(comptime T: type) type {
+        return struct {
+            const FindCursor = struct {
+                firstBatch: []const T,
+                id: i64,
+                ns: []const u8,
+            };
+            cursor: FindCursor,
+            ok: f64,
+        };
+    }
+
+    pub fn Cursor(comptime T: type) type {
+        return struct {
+            idx: usize = 0,
+            resp: Owned(FindResponse(T)),
+
+            fn init(resp: Owned(FindResponse(T))) @This() {
+                return .{ .resp = resp };
+            }
+
+            fn deinit(self: *@This()) void {
+                self.resp.deinit();
+            }
+
+            /// iterates over cursor while values remain in batch
+            fn next(self: *@This()) ?T {
+                const cursor = self.resp.value.cursor;
+                if (self.idx < cursor.firstBatch.len) {
+                    const elem = cursor.firstBatch[self.idx];
+                    self.idx += 1;
+                    return elem;
+                }
+                // todo: run getMore if there are more
+                return null;
+            }
+
+            fn count(self: *@This()) usize {
+                // todo: handle getMore if needed.
+                return self.resp.value.cursor.firstBatch.len;
+            }
+        };
+    }
+
+    // https://www.mongodb.com/docs/manual/reference/command/find/#mongodb-dbcommand-dbcmd.find
+    // see also https://www.mongodb.com/docs/manual/reference/command/getMore/#mongodb-dbcommand-dbcmd.getMore
+    pub fn find(self: *const @This(), comptime T: type, filter: RawBson, options: FindOptions) !Cursor(T) {
+        _ = options; // autofix
+        var client = self.db.client;
+        const conn = try client.connection();
+        defer conn.release();
+
+        try protocol.write(client.allocator, conn.stream, bson.types.RawBson.document(
+            &.{
+                .{ "find", bson.types.RawBson.string(self.name) },
+                .{ "$db", bson.types.RawBson.string(self.db.name) },
+                .{ "filter", filter },
+            },
+        ));
+
+        var doc = try protocol.read(client.allocator, conn.stream);
+        errdefer doc.deinit();
+
+        if (err.isErr(doc.value)) {
+            var reqErr = try err.extractErr(client.allocator, doc.value);
+            defer reqErr.deinit();
+            std.debug.print("error {s}", .{reqErr.value.errmsg});
+            return error.InvalidRequest;
+        }
+
+        //return doc;
+        defer doc.deinit();
+
+        return Cursor(T).init(try doc.value.into(client.allocator, FindResponse(T)));
+    }
+};
+
+test "Collection.FindFilter" {
+    const f: Collection.FindFilter = .{
+        .eq = .{ "foo", RawBson.string("bar") },
+    };
+    std.debug.print("filter {any}\n", .{f.toBson()});
+}
 
 pub const Client = struct {
     allocator: std.mem.Allocator,
@@ -101,6 +193,10 @@ pub const Client = struct {
     pub fn deinit(self: *@This()) void {
         self.options.deinit();
         if (self.conn) |c| c.stream.close();
+    }
+
+    pub fn db(self: @This(), name: []const u8) DB {
+        return .{ .client = self, .name = name };
     }
 
     fn connection(self: *@This()) !Connection {
@@ -117,8 +213,12 @@ pub const Client = struct {
             };
 
             std.posix.setsockopt(underlying.handle, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
-            const conn = Connection{ .stream = if (self.options.tls) Stream.tls(underlying, try std.crypto.tls.Client.init(underlying, .{}, addr.hostname)) else Stream.plain(underlying) };
+            const conn = Connection{
+                .stream = if (self.options.tls) Stream.tls(underlying, try std.crypto.tls.Client.init(underlying, .{}, addr.hostname)) else Stream.plain(underlying),
+            };
             self.conn = conn;
+            var shake = try self.handshake(conn);
+            defer shake.deinit();
             break :blk conn;
         };
     }
@@ -139,7 +239,7 @@ pub const Client = struct {
         }
     };
 
-    fn ping(self: *@This()) !Owned(PingResponse) {
+    pub fn ping(self: *@This()) !Owned(PingResponse) {
         const conn = try self.connection();
         defer conn.release();
 
@@ -161,35 +261,6 @@ pub const Client = struct {
         }
 
         return try doc.value.into(self.allocator, PingResponse);
-    }
-
-    // https://www.mongodb.com/docs/manual/reference/command/find/#mongodb-dbcommand-dbcmd.find
-    // todo: return a Cursor type with a `.next()`-based iterator
-    // see also https://www.mongodb.com/docs/manual/reference/command/getMore/#mongodb-dbcommand-dbcmd.getMore
-    fn find(self: *@This()) !Owned(RawBson) {
-        const conn = try self.connection();
-        defer conn.release();
-        if (self.options.credentials) |creds| {
-            try creds.authenticate(self.allocator, conn.stream, null);
-        }
-        try protocol.write(self.allocator, conn.stream, bson.types.RawBson.document(
-            &.{
-                .{ "find", bson.types.RawBson.string("system.users") },
-                .{ "$db", bson.types.RawBson.string("admin") },
-            },
-        ));
-
-        var doc = try protocol.read(self.allocator, conn.stream);
-        errdefer doc.deinit();
-
-        if (err.isErr(doc.value)) {
-            var reqErr = try err.extractErr(self.allocator, doc.value);
-            defer reqErr.deinit();
-            std.debug.print("error {s}", .{reqErr.value.errmsg});
-            return error.InvalidRequest;
-        }
-
-        return doc;
     }
 
     /// todo move to its own module
@@ -256,18 +327,11 @@ pub const Client = struct {
     /// https://www.mongodb.com/docs/manual/reference/command/hello
     /// handshake https://github.com/mongodb/specifications/blob/master/source/auth/auth.md#authentication
     /// speculative auth https://github.com/mongodb/mongo/blob/master/src/mongo/db/auth/README.md#speculative-authentication
-    pub fn hello(self: *@This()) !Owned(HelloResponse) {
+    fn handshake(self: *@This(), conn: Connection) !Owned(HelloResponse) {
 
         // compare with
         // java impl - https://github.com/mongodb/mongo-java-driver/blob/d8503c31a29b446ba21dfa2ded8cd38f298e3165/driver-core/src/main/com/mongodb/internal/connection/InternalStreamConnectionInitializer.java#L92
         // rust impl - https://github.com/mongodb/mongo-rust-driver/blob/b781af26dfb17fe62823a866a025de9fb102e0b3/src/cmap/establish/handshake.rs#L435
-
-        if (self.options.database == null) {
-            return error.DatabaseNotSelected;
-        }
-
-        const conn = try self.connection();
-        defer conn.release();
 
         const clientFirst = if (self.options.credentials) |creds| try (creds.mechansim orelse auth.Mechansim.@"SCRAM-SHA-256").speculativeAuthenticate(self.allocator, creds, "admin") else null;
 
@@ -323,7 +387,7 @@ pub const Client = struct {
         if (err.isErr(doc.value)) {
             var reqErr = try err.extractErr(self.allocator, doc.value);
             defer reqErr.deinit();
-            std.debug.print("error: {s}\n", .{reqErr.value.errmsg});
+            std.debug.print("error {s}\n", .{reqErr.value.errmsg});
             return error.InvalidRequest;
         }
 
@@ -354,9 +418,7 @@ test "authenticate" {
     defer client.deinit();
     client.authenticate() catch |e| {
         switch (e) {
-            error.ConnectionRefused => {
-                std.debug.print("mongodb not running {any}\n", .{e});
-            },
+            error.ConnectionRefused => std.debug.print("mongodb not running {any}\n", .{e}),
             else => return e,
         }
         // catch errors until we set up a proper integration testing bootstrap on host
@@ -375,9 +437,7 @@ test "ping" {
         vresp.deinit();
     } else |e| {
         switch (e) {
-            error.ConnectionRefused => {
-                std.debug.print("mongodb not running {any}\n", .{e});
-            },
+            error.ConnectionRefused => std.debug.print("mongodb not running {any}\n", .{e}),
             else => return e,
         }
         // catch errors until we set up a proper integration testing bootstrap on host
@@ -385,25 +445,40 @@ test "ping" {
 }
 
 test "find" {
+    const connectionStr = "mongodb://demo:omed@localhost/test";
     var client = Client.init(
         std.testing.allocator,
-        .{
-            .credentials = .{
-                .username = "demo",
-                .password = "omed",
-                .mechansim = .@"SCRAM-SHA-256", // default?
-            },
-        },
+        try ClientOptions.fromConnectionString(std.testing.allocator, connectionStr),
     );
     defer client.deinit();
-    if (client.find()) |doc| {
+
+    if (client.db("admin").collection("system.users").find(
+        // the type we're deserializing to
+        struct {
+            _id: []const u8,
+            user: []const u8,
+            db: []const u8,
+            roles: []const struct { role: []const u8, db: []const u8 },
+        },
+        RawBson.document(
+            &.{
+                // .{ "user", RawBson.string("bob") },
+            },
+        ),
+        .{},
+    )) |doc| {
         var vdoc = doc;
-        vdoc.deinit();
+        defer vdoc.deinit();
+
+        std.debug.print("find count {d}\n", .{vdoc.count()});
+        while (vdoc.next()) |elem| {
+            std.debug.print("user {s}\n", .{elem.user});
+            std.debug.print(" roles: \n", .{});
+            for (elem.roles) |role| std.debug.print(" - {s} \n", .{role.role});
+        }
     } else |e| {
         switch (e) {
-            error.ConnectionRefused => {
-                std.debug.print("mongodb not running {any}\n", .{e});
-            },
+            error.ConnectionRefused => std.debug.print("mongodb not running {any}\n", .{e}),
             else => return e,
         }
         // catch errors until we set up a proper integration testing bootstrap on host
@@ -411,24 +486,25 @@ test "find" {
 }
 
 // https://www.mongodb.com/docs/manual/reference/command/hello/#syntax
-test "hello" {
-    const connectionStr = "mongodb://demo:omed@localhost/test";
-    var client = Client.init(
-        std.testing.allocator,
-        try ClientOptions.fromConnectionString(std.testing.allocator, connectionStr),
-    );
-    defer client.deinit();
-    if (client.hello()) |resp| {
-        var vresp = resp;
-        vresp.deinit();
-    } else |e| {
-        std.debug.print("error? {any}\n", .{e});
-        switch (e) {
-            error.ConnectionRefused => {
-                std.debug.print("mongodb not running {any}\n", .{e});
-            },
-            else => return e,
-        }
-        // catch errors until we set up a proper integration testing bootstrap on host
-    }
-}
+// test "hello" {
+//     const connectionStr = "mongodb://demo:omed@localhost/test";
+//     var client = Client.init(
+//         std.testing.allocator,
+//         try ClientOptions.fromConnectionString(std.testing.allocator, connectionStr),
+//     );
+//     defer client.deinit();
+
+//     if (client.hello()) |resp| {
+//         var vresp = resp;
+//         vresp.deinit();
+//     } else |e| {
+//         std.debug.print("error? {any}\n", .{e});
+//         switch (e) {
+//             error.ConnectionRefused => {
+//                 std.debug.print("mongodb not running {any}\n", .{e});
+//             },
+//             else => return e,
+//         }
+//         // catch errors until we set up a proper integration testing bootstrap on host
+//     }
+// }
