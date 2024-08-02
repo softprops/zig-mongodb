@@ -143,7 +143,12 @@ pub const Collection = struct {
 
     // https://www.mongodb.com/docs/manual/reference/command/find/#mongodb-dbcommand-dbcmd.find
     // see also https://www.mongodb.com/docs/manual/reference/command/getMore/#mongodb-dbcommand-dbcmd.getMore
-    pub fn find(self: *const @This(), comptime T: type, filter: RawBson, options: FindOptions) !Cursor(T) {
+    pub fn find(
+        self: *const @This(),
+        comptime T: type,
+        filter: RawBson,
+        options: FindOptions,
+    ) !Cursor(T) {
         _ = options; // autofix
         var client = self.db.client;
         const conn = try client.connection();
